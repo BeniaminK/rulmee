@@ -25,13 +25,11 @@ int read_desktop(FILE* fd, void* ctx,
                                      char* value)) {
   char* table_name = NULL;
 
-  bool ret = -1;
+  int ret = 0;
   char* buf = NULL;
   size_t alloc_size = 0;
-  size_t read_size;
+  ssize_t read_size;
   while ((read_size = getline(&buf, &alloc_size, fd)) > 0) {
-    ret = 0;
-
     char* buf_start = trim_str(buf);
     size_t indent_size = buf_start - buf;
 
@@ -66,7 +64,6 @@ int read_desktop(FILE* fd, void* ctx,
       buf_start[eq_idx] = '\0'; // the equal
       key = trim_str(key);
       char* value = &buf_start[eq_idx + 1];
-      if (buf_start[read_size - 1] == '\n') buf_start[read_size - 1] = '\0';
       value = trim_str(value);
 
       // Callback

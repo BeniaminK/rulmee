@@ -248,9 +248,9 @@ int parse_config(struct config* NNULLABLE config, char* NNULLABLE path) {
     return 0; // Its fine now anyways
   }
 
-  bool ret = read_desktop(fd, config, config_line_handler);
+  int ret = read_desktop(fd, config, config_line_handler);
   (void)fclose(fd);
 
-  if (!ret) return -1;
+  if (ret < 0) return -1;
   return 0;
 }

@@ -8,3 +8,8 @@ valgrind-out.txt
 
 # nix build result
 result
+
+
+# Added by cargo
+
+/target
