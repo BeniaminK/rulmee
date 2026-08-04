@@ -28,6 +28,86 @@ const SOURCES: &[(SessionType, &str)] = &[
     (SessionType::Wayland, "/usr/local/share/wayland-sessions"),
 ];
 
+pub fn parse_exec_string(exec: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current_arg = String::new();
+    let mut in_double_quote = false;
+    let mut in_single_quote = false;
+    let mut escaped = false;
+    let mut saw_quotes_for_arg = false;
+
+    let chars: Vec<char> = exec.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+
+        if escaped {
+            current_arg.push(c);
+            escaped = false;
+            i += 1;
+            continue;
+        }
+
+        if c == '\\' && !in_single_quote {
+            escaped = true;
+            i += 1;
+            continue;
+        }
+
+        if c == '"' && !in_single_quote {
+            in_double_quote = !in_double_quote;
+            saw_quotes_for_arg = true;
+            i += 1;
+            continue;
+        }
+
+        if c == '\'' && !in_double_quote {
+            in_single_quote = !in_single_quote;
+            saw_quotes_for_arg = true;
+            i += 1;
+            continue;
+        }
+
+        if (c == ' ' || c == '\t' || c == '\n') && !in_double_quote && !in_single_quote {
+            if !current_arg.is_empty() || saw_quotes_for_arg {
+                args.push(std::mem::take(&mut current_arg));
+                saw_quotes_for_arg = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if c == '%' {
+            if i + 1 < chars.len() {
+                let next = chars[i + 1];
+                if next == '%' {
+                    current_arg.push('%');
+                    i += 2;
+                    continue;
+                } else {
+                    // Drop any %X field code
+                    i += 2;
+                    continue;
+                }
+            } else {
+                // Trailing %
+                i += 1;
+                continue;
+            }
+        }
+
+        current_arg.push(c);
+        i += 1;
+    }
+
+    if !current_arg.is_empty() || saw_quotes_for_arg {
+        args.push(current_arg);
+    }
+
+    args
+}
+
 pub fn get_available_sessions() -> Vec<Session> {
     let mut sessions = Vec::new();
 
@@ -68,3 +148,65 @@ pub fn get_available_sessions() -> Vec<Session> {
 
     sessions
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_exec_string_plain() {
+        assert_eq!(
+            parse_exec_string("sway --unsupported-gpu"),
+            vec!["sway", "--unsupported-gpu"]
+        );
+    }
+
+    #[test]
+    fn test_parse_exec_string_quoted_spaces() {
+        assert_eq!(
+            parse_exec_string("gnome-session --session=\"gnome fallback\""),
+            vec!["gnome-session", "--session=gnome fallback"]
+        );
+        assert_eq!(
+            parse_exec_string("'my program' 'arg with spaces'"),
+            vec!["my program", "arg with spaces"]
+        );
+    }
+
+    #[test]
+    fn test_parse_exec_string_escaped_spaces() {
+        assert_eq!(
+            parse_exec_string("my\\ app --arg"),
+            vec!["my app", "--arg"]
+        );
+    }
+
+    #[test]
+    fn test_parse_exec_string_field_codes_stripped() {
+        assert_eq!(
+            parse_exec_string("gnome-terminal %u --dir %f"),
+            vec!["gnome-terminal", "--dir"]
+        );
+        assert_eq!(
+            parse_exec_string("app --title=%c %F"),
+            vec!["app", "--title="]
+        );
+    }
+
+    #[test]
+    fn test_parse_exec_string_literal_percent() {
+        assert_eq!(
+            parse_exec_string("echo %%USER%%"),
+            vec!["echo", "%USER%"]
+        );
+    }
+
+    #[test]
+    fn test_parse_exec_string_unclosed_quotes() {
+        assert_eq!(
+            parse_exec_string("sway --config \"/etc/sway/config"),
+            vec!["sway", "--config", "/etc/sway/config"]
+        );
+    }
+}
+
