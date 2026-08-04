@@ -6,6 +6,64 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::os::unix::process::CommandExt;
 
+pub fn assemble_environment(
+    pam_env: &HashMap<String, String>,
+    username: &str,
+    home_dir: &str,
+    shell: &str,
+    session_type: &str,
+    display: Option<&str>,
+) -> HashMap<String, String> {
+    let mut env = HashMap::new();
+
+    // 1. POSIX Credential Defaults
+    env.insert("USER".to_string(), username.to_string());
+    env.insert("LOGNAME".to_string(), username.to_string());
+    env.insert("HOME".to_string(), home_dir.to_string());
+    env.insert("SHELL".to_string(), shell.to_string());
+    env.insert(
+        "PATH".to_string(),
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string(),
+    );
+
+    // 2. Freedesktop / XDG Standards
+    env.insert("XDG_SESSION_TYPE".to_string(), session_type.to_string());
+    env.insert("XDG_SESSION_CLASS".to_string(), "user".to_string());
+
+    // 3. Merged PAM Environment
+    for (k, v) in pam_env {
+        env.insert(k.clone(), v.clone());
+    }
+
+    // 4. Optional Display Variable
+    if let Some(disp) = display {
+        env.insert("DISPLAY".to_string(), disp.to_string());
+    }
+
+    env
+}
+
+pub fn build_exec_command(
+    exec_args: &[String],
+    user_shell: &str,
+    bypass_shell_login: bool,
+) -> (String, Vec<String>) {
+    if exec_args.is_empty() {
+        return (user_shell.to_string(), vec!["-l".to_string()]);
+    }
+
+    if bypass_shell_login {
+        (exec_args[0].clone(), exec_args[1..].to_vec())
+    } else {
+        let full_cmd = exec_args.join(" ");
+        let shell = if user_shell.is_empty() { "/bin/bash" } else { user_shell };
+        (
+            shell.to_string(),
+            vec!["-l".to_string(), "-c".to_string(), format!("exec {}", full_cmd)],
+        )
+    }
+}
+
 pub fn launch_session(
     user: &str,
     uid: u32,
@@ -131,3 +189,46 @@ fn launch_xorg(
         Err(e) => Err(format!("Fork failed: {}", e)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_assemble_environment_merging() {
+        let mut pam_env = HashMap::new();
+        pam_env.insert("PAM_VAR".to_string(), "pam_val".to_string());
+        pam_env.insert("PATH".to_string(), "/custom/path".to_string());
+
+        let env = assemble_environment(&pam_env, "alice", "/home/alice", "/bin/zsh", "wayland", None);
+
+        assert_eq!(env.get("USER").map(|s| s.as_str()), Some("alice"));
+        assert_eq!(env.get("LOGNAME").map(|s| s.as_str()), Some("alice"));
+        assert_eq!(env.get("HOME").map(|s| s.as_str()), Some("/home/alice"));
+        assert_eq!(env.get("SHELL").map(|s| s.as_str()), Some("/bin/zsh"));
+        assert_eq!(env.get("XDG_SESSION_TYPE").map(|s| s.as_str()), Some("wayland"));
+        assert_eq!(env.get("XDG_SESSION_CLASS").map(|s| s.as_str()), Some("user"));
+        assert_eq!(env.get("PAM_VAR").map(|s| s.as_str()), Some("pam_val"));
+        assert_eq!(env.get("PATH").map(|s| s.as_str()), Some("/custom/path"));
+    }
+
+    #[test]
+    fn test_build_exec_command_bypass_login_false() {
+        let exec_args = vec!["sway".to_string(), "--unsupported-gpu".to_string()];
+        let (prog, args) = build_exec_command(&exec_args, "/bin/bash", false);
+
+        assert_eq!(prog, "/bin/bash");
+        assert_eq!(args, vec!["-l", "-c", "exec sway --unsupported-gpu"]);
+    }
+
+    #[test]
+    fn test_build_exec_command_bypass_login_true() {
+        let exec_args = vec!["sway".to_string(), "--unsupported-gpu".to_string()];
+        let (prog, args) = build_exec_command(&exec_args, "/bin/bash", true);
+
+        assert_eq!(prog, "sway");
+        assert_eq!(args, vec!["--unsupported-gpu"]);
+    }
+}
+

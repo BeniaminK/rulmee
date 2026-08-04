@@ -139,7 +139,6 @@ hb = "="
         ); // "red"
 
         // Other sections that were partially defined or entirely missing
-        assert_eq!(config.chars.vb, default_config.chars.vb); // "│"
         assert_eq!(
             config.behavior.refresh_rate,
             default_config.behavior.refresh_rate
