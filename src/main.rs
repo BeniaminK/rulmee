@@ -149,36 +149,36 @@ fn main() {
                     std::env::var("LIDM_PAM_SERVICE").unwrap_or_else(|_| "login".to_string());
                 match auth::authenticate(&username, &password, &pam_service) {
                     Ok(auth_session) => {
-                        let home_dir = uzers::get_user_by_name(&username)
-                            .map(|u| u.home_dir().to_string_lossy().into_owned())
-                            .unwrap_or_else(|| format!("/home/{}", username));
+                        if let Some(u) = uzers::get_user_by_name(&username) {
+                            let home_dir = u.home_dir().to_string_lossy().into_owned();
+                            let uid = u.uid();
+                            let gid = u.primary_group_id();
+                            let session_type_str = if is_xorg { "x11" } else { "wayland" };
 
-                        let uid = uzers::get_user_by_name(&username).map(|u| u.uid()).unwrap_or(1000);
-                        let gid = uzers::get_user_by_name(&username).map(|u| u.primary_group_id()).unwrap_or(1000);
+                            let env = exec::assemble_environment(
+                                &auth_session.env,
+                                &username,
+                                &home_dir,
+                                &shell,
+                                session_type_str,
+                                None,
+                            );
 
-                        let session_type_str = if is_xorg { "x11" } else { "wayland" };
-
-                        let env = exec::assemble_environment(
-                            &auth_session.env,
-                            &username,
-                            &home_dir,
-                            &shell,
-                            session_type_str,
-                            None,
-                        );
-
-                        if let Err(e) = exec::launch_session(
-                            &username,
-                            uid,
-                            gid,
-                            &env,
-                            &exec_args,
-                            is_xorg,
-                            args.vt,
-                            &shell,
-                            bypass_shell_login,
-                        ) {
-                            eprintln!("Failed to launch session: {}", e);
+                            if let Err(e) = exec::launch_session(
+                                &username,
+                                uid,
+                                gid,
+                                &env,
+                                &exec_args,
+                                is_xorg,
+                                args.vt,
+                                &shell,
+                                bypass_shell_login,
+                            ) {
+                                eprintln!("Failed to launch session: {}", e);
+                            }
+                        } else {
+                            eprintln!("User not found in system: {}", username);
                         }
                     }
                     Err(e) => {

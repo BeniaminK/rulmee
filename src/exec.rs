@@ -43,20 +43,26 @@ pub fn assemble_environment(
     env
 }
 
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 pub fn build_exec_command(
     exec_args: &[String],
     user_shell: &str,
     bypass_shell_login: bool,
 ) -> (String, Vec<String>) {
+    let shell = if user_shell.is_empty() { "/bin/bash" } else { user_shell };
+
     if exec_args.is_empty() {
-        return (user_shell.to_string(), vec!["-l".to_string()]);
+        return (shell.to_string(), vec!["-l".to_string()]);
     }
 
     if bypass_shell_login {
         (exec_args[0].clone(), exec_args[1..].to_vec())
     } else {
-        let full_cmd = exec_args.join(" ");
-        let shell = if user_shell.is_empty() { "/bin/bash" } else { user_shell };
+        let quoted_args: Vec<String> = exec_args.iter().map(|arg| shell_quote(arg)).collect();
+        let full_cmd = quoted_args.join(" ");
         (
             shell.to_string(),
             vec!["-l".to_string(), "-c".to_string(), format!("exec {}", full_cmd)],
@@ -229,7 +235,7 @@ mod tests {
         let (prog, args) = build_exec_command(&exec_args, "/bin/bash", false);
 
         assert_eq!(prog, "/bin/bash");
-        assert_eq!(args, vec!["-l", "-c", "exec sway --unsupported-gpu"]);
+        assert_eq!(args, vec!["-l", "-c", "exec 'sway' '--unsupported-gpu'"]);
     }
 
     #[test]
@@ -239,6 +245,22 @@ mod tests {
 
         assert_eq!(prog, "sway");
         assert_eq!(args, vec!["--unsupported-gpu"]);
+    }
+
+    #[test]
+    fn test_shell_quote() {
+        assert_eq!(shell_quote("sway"), "'sway'");
+        assert_eq!(shell_quote("my config.conf"), "'my config.conf'");
+        assert_eq!(shell_quote("don't stop"), "'don'\\''t stop'");
+    }
+
+    #[test]
+    fn test_build_exec_command_quoting_and_empty_shell() {
+        let exec_args = vec!["sway".to_string(), "--config".to_string(), "my config.conf".to_string()];
+        let (prog, args) = build_exec_command(&exec_args, "", false);
+
+        assert_eq!(prog, "/bin/bash");
+        assert_eq!(args, vec!["-l", "-c", "exec 'sway' '--config' 'my config.conf'"]);
     }
 }
 
