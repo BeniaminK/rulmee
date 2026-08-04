@@ -5,7 +5,7 @@ This document provides a detailed technical comparison between the C implementat
 > **Current Parity Progress (Updated 2026-08-05):**
 > - [x] **[P0] Session Environment & Login Shell Architecture** (Completed — `exec.rs` delegates to `$SHELL -l -c`)
 > - [x] **[P0] PAM Session Teardown** (Completed — `AuthSession` RAII `close()`/`Drop` executes `pam_close_session`)
-> - [ ] **[P1] Freedesktop `Exec` Parsing** (Pending — requires spec parser for quotes & `%` specifiers)
+> - [x] **[P1] Freedesktop `Exec` Parsing** (Completed — `parse_exec_string` handles quotes & `%` specifiers)
 > - [ ] **[P1] FIDO Hotkey Support** (Pending — requires `fido` key handling in `UIAdapter`)
 > - [ ] **[P2] Process Group & Signal Teardown** (Pending — requires `setpgid` and `SIGTERM` forwarding)
 
@@ -215,8 +215,8 @@ The Rust implementation of **LiDM** is a modern rewrite using standard Rust idio
 - [x] **[P0] PAM Session Teardown**
   - Modify `auth.rs` / `exec.rs` to handle PAM session cleanup after `waitpid` finishes, ensuring `pam_close_session` and `pam_setcred(DELETE)` are invoked.
 
-- [ ] **[P1] Freedesktop `Exec` Parsing**
-  - Replace `exec.split_whitespace()` in `session.rs` with `shell-words` or custom parser handling quotes and `%` field codes.
+- [x] **[P1] Freedesktop `Exec` Parsing**
+  - Replace `exec.split_whitespace()` in `session.rs` with `parse_exec_string` handling quotes and `%` field codes.
 
 - [ ] **[P1] FIDO Hotkey Support**
   - Add `fido: Option<String>` to `Functions` in `config.rs`.
