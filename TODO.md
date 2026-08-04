@@ -118,11 +118,12 @@ The Rust implementation of **LiDM** is a modern rewrite using standard Rust idio
     *   Filters users whose home directories start with `/home/`.
     *   Extracts username, shell path, and first field of GECOS string for display name.
 
-*   **`auth.rs` (PAM Authentication)**
+*   **`auth.rs` (PAM Authentication & RAII Teardown)**
     *   Uses `pam_client2` crate.
     *   `authenticate`: Initializes `Context` with service name (`LIDM_PAM_SERVICE` or `"login"`), calls `context.authenticate(Flag::NONE)`, `context.acct_mgmt(Flag::NONE)`, `session.open_session(Flag::NONE)`, `session.reinitialize_credentials(Flag::NONE)`.
-    *   Leaks PAM session (`session.leak()`) to maintain open PAM credentials across child process execution.
+    *   `session.leak()` converts the session into a `SessionToken` stored inside `AuthSession` alongside the `Context`.
     *   Extracts PAM environment variables into `HashMap<String, String>`.
+    *   `AuthSession::close()` / `Drop`: Reclaims session via `context.unleak_session(token)` and calls `session.close(Flag::NONE)`, ensuring `pam_close_session()` and `pam_setcred(PAM_DELETE_CRED)` are executed upon session exit.
 
 *   **`exec.rs` (Session Launch Execution & Environment Assembly)**
     *   `assemble_environment`: Merges PAM environment variables (`pam_getenvlist()`) with standard POSIX/XDG environment variables (`USER`, `LOGNAME`, `HOME`, `SHELL`, `PATH`, `XDG_SESSION_TYPE`, `XDG_SESSION_CLASS`, `DISPLAY`).
