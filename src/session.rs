@@ -78,20 +78,26 @@ pub fn parse_exec_string(exec: &str) -> Vec<String> {
             continue;
         }
 
-        if c == '%' {
+        if c == '%' && !in_double_quote && !in_single_quote {
             if i + 1 < chars.len() {
                 let next = chars[i + 1];
                 if next == '%' {
                     current_arg.push('%');
                     i += 2;
                     continue;
-                } else {
-                    // Drop any %X field code
+                } else if next.is_ascii_alphanumeric() {
+                    // Drop field code (%f, %F, %u, %U, %i, %c, %k, etc.)
                     i += 2;
+                    continue;
+                } else {
+                    // Non-specifier character (e.g. space, quote) after %: treat % as literal %
+                    current_arg.push('%');
+                    i += 1;
                     continue;
                 }
             } else {
-                // Trailing %
+                // Trailing % at EOF: treat % as literal %
+                current_arg.push('%');
                 i += 1;
                 continue;
             }
@@ -206,6 +212,18 @@ mod tests {
         assert_eq!(
             parse_exec_string("sway --config \"/etc/sway/config"),
             vec!["sway", "--config", "/etc/sway/config"]
+        );
+    }
+
+    #[test]
+    fn test_parse_exec_string_percent_in_quotes_and_non_specifiers() {
+        assert_eq!(
+            parse_exec_string("app --title=\"100%\" --next"),
+            vec!["app", "--title=100%", "--next"]
+        );
+        assert_eq!(
+            parse_exec_string("echo % 100"),
+            vec!["echo", "%", "100"]
         );
     }
 }
