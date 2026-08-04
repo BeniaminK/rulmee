@@ -1,10 +1,27 @@
 use std::collections::HashMap;
-use pam_client2::{Context, Flag};
+use pam_client2::{Context, Flag, SessionToken};
 use pam_client2::conv_mock::Conversation;
 
 pub struct AuthSession {
     pub username: String,
     pub env: HashMap<String, String>,
+    context: Option<Context<Conversation>>,
+    token: Option<SessionToken>,
+}
+
+impl AuthSession {
+    pub fn close(&mut self) {
+        if let (Some(mut context), Some(token)) = (self.context.take(), self.token.take()) {
+            let session = context.unleak_session(token);
+            let _ = session.close(Flag::NONE);
+        }
+    }
+}
+
+impl Drop for AuthSession {
+    fn drop(&mut self) {
+        self.close();
+    }
 }
 
 pub fn authenticate(user: &str, password: &str, service: &str) -> Result<AuthSession, String> {
@@ -28,7 +45,6 @@ pub fn authenticate(user: &str, password: &str, service: &str) -> Result<AuthSes
     let mut session = context.open_session(Flag::NONE)
         .map_err(|e| format!("pam_open_session failed: {}", e))?;
 
-    // 5. Reinitialize credentials (corresponds to PAM_REINITIALIZE_CRED)
     session.reinitialize_credentials(Flag::NONE)
         .map_err(|e| format!("pam_setcred(REINITIALIZE) failed: {}", e))?;
 
@@ -37,7 +53,7 @@ pub fn authenticate(user: &str, password: &str, service: &str) -> Result<AuthSes
     // The C version calls pam_end in the parent AFTER waitpid.
     // By leaking the session, we prevent it from being closed when this function returns.
     // This also ends the mutable borrow of the context.
-    let _ = session.leak();
+    let token = session.leak();
 
     // 7. Extract environment variables
     let mut env = HashMap::new();
@@ -51,5 +67,26 @@ pub fn authenticate(user: &str, password: &str, service: &str) -> Result<AuthSes
     Ok(AuthSession {
         username: user.to_string(),
         env,
+        context: Some(context),
+        token: Some(token),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_auth_session_teardown_safely_handles_none() {
+        let mut session = AuthSession {
+            username: "testuser".to_string(),
+            env: HashMap::new(),
+            context: None,
+            token: None,
+        };
+        session.close();
+        assert!(session.context.is_none());
+        assert!(session.token.is_none());
+    }
+}
+
