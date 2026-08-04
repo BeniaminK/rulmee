@@ -72,11 +72,13 @@ pub fn launch_session(
     exec_args: &[String],
     is_xorg: bool,
     vt: Option<c_int>,
+    user_shell: &str,
+    bypass_shell_login: bool,
 ) -> Result<(), String> {
     if is_xorg {
-        launch_xorg(user, uid, gid, env, exec_args, vt)
+        launch_xorg(user, uid, gid, env, exec_args, vt, user_shell, bypass_shell_login)
     } else {
-        launch_direct(user, uid, gid, env, exec_args)
+        launch_direct(user, uid, gid, env, exec_args, user_shell, bypass_shell_login)
     }
 }
 
@@ -86,6 +88,8 @@ fn launch_direct(
     gid: u32,
     env: &HashMap<String, String>,
     exec_args: &[String],
+    user_shell: &str,
+    bypass_shell_login: bool,
 ) -> Result<(), String> {
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {
@@ -95,8 +99,10 @@ fn launch_direct(
             setgid(Gid::from_raw(gid)).unwrap();
             setuid(Uid::from_raw(uid)).unwrap();
 
-            let mut cmd = Command::new(&exec_args[0]);
-            cmd.args(&exec_args[1..]);
+            let (prog, args) = build_exec_command(exec_args, user_shell, bypass_shell_login);
+
+            let mut cmd = Command::new(&prog);
+            cmd.args(&args);
             cmd.envs(env);
             
             let err = cmd.exec();
@@ -119,6 +125,8 @@ fn launch_xorg(
     env: &HashMap<String, String>,
     exec_args: &[String],
     vt: Option<c_int>,
+    user_shell: &str,
+    bypass_shell_login: bool,
 ) -> Result<(), String> {
     let vt = vt.ok_or_else(|| "Xorg requires a VT number (none provided)".to_string())?;
 
@@ -161,8 +169,10 @@ fn launch_xorg(
                     setgid(Gid::from_raw(gid)).unwrap();
                     setuid(Uid::from_raw(uid)).unwrap();
 
-                    let mut cmd = Command::new(&exec_args[0]);
-                    cmd.args(&exec_args[1..]);
+                    let (prog, args) = build_exec_command(exec_args, user_shell, bypass_shell_login);
+
+                    let mut cmd = Command::new(&prog);
+                    cmd.args(&args);
                     cmd.envs(session_env);
                     
                     let err = cmd.exec();

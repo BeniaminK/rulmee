@@ -92,6 +92,7 @@ fn main() {
                 None
             }
         };
+        let bypass_shell_login = config.behavior.bypass_shell_login;
         let ui_console_buffer = if config.behavior.show_console {
             Some(console_buffer.clone())
         } else {
@@ -148,23 +149,36 @@ fn main() {
                     std::env::var("LIDM_PAM_SERVICE").unwrap_or_else(|_| "login".to_string());
                 match auth::authenticate(&username, &password, &pam_service) {
                     Ok(auth_session) => {
-                        let mut env = auth_session.env;
-                        env.insert("USER".to_string(), username.clone());
-                        // Try to get actual home dir
-                        if let Some(u) = uzers::get_user_by_name(&username) {
-                            env.insert(
-                                "HOME".to_string(),
-                                u.home_dir().to_string_lossy().into_owned(),
-                            );
-                            let uid = u.uid();
-                            let gid = u.primary_group_id();
-                            if let Err(e) = exec::launch_session(
-                                &username, uid, gid, &env, &exec_args, is_xorg, args.vt,
-                            ) {
-                                eprintln!("Failed to launch session: {}", e);
-                            }
-                        } else {
-                            eprintln!("User not found in system: {}", username);
+                        let home_dir = uzers::get_user_by_name(&username)
+                            .map(|u| u.home_dir().to_string_lossy().into_owned())
+                            .unwrap_or_else(|| format!("/home/{}", username));
+
+                        let uid = uzers::get_user_by_name(&username).map(|u| u.uid()).unwrap_or(1000);
+                        let gid = uzers::get_user_by_name(&username).map(|u| u.primary_group_id()).unwrap_or(1000);
+
+                        let session_type_str = if is_xorg { "x11" } else { "wayland" };
+
+                        let env = exec::assemble_environment(
+                            &auth_session.env,
+                            &username,
+                            &home_dir,
+                            &shell,
+                            session_type_str,
+                            None,
+                        );
+
+                        if let Err(e) = exec::launch_session(
+                            &username,
+                            uid,
+                            gid,
+                            &env,
+                            &exec_args,
+                            is_xorg,
+                            args.vt,
+                            &shell,
+                            bypass_shell_login,
+                        ) {
+                            eprintln!("Failed to launch session: {}", e);
                         }
                     }
                     Err(e) => {
