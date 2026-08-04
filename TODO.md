@@ -2,6 +2,13 @@
 
 This document provides a detailed technical comparison between the C implementation and the Rust rewrite of **LiDM** (Lightweight Display Manager), highlighting implementation details, missing features, architectural differences, and a concrete TODO roadmap for full parity.
 
+> **Current Parity Progress (Updated 2026-08-05):**
+> - [x] **[P0] Session Environment & Login Shell Architecture** (Completed — `exec.rs` delegates to `$SHELL -l -c`)
+> - [x] **[P0] PAM Session Teardown** (Completed — `AuthSession` RAII `close()`/`Drop` executes `pam_close_session`)
+> - [ ] **[P1] Freedesktop `Exec` Parsing** (Pending — requires spec parser for quotes & `%` specifiers)
+> - [ ] **[P1] FIDO Hotkey Support** (Pending — requires `fido` key handling in `UIAdapter`)
+> - [ ] **[P2] Process Group & Signal Teardown** (Pending — requires `setpgid` and `SIGTERM` forwarding)
+
 ---
 
 ## 1. Detailed Description of the C Implementation
