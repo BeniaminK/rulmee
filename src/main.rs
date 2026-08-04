@@ -148,7 +148,7 @@ fn main() {
                 let pam_service =
                     std::env::var("LIDM_PAM_SERVICE").unwrap_or_else(|_| "login".to_string());
                 match auth::authenticate(&username, &password, &pam_service) {
-                    Ok(auth_session) => {
+                    Ok(mut auth_session) => {
                         if let Some(u) = uzers::get_user_by_name(&username) {
                             let home_dir = u.home_dir().to_string_lossy().into_owned();
                             let uid = u.uid();
@@ -177,6 +177,9 @@ fn main() {
                             ) {
                                 eprintln!("Failed to launch session: {}", e);
                             }
+
+                            // Teardown PAM session cleanly after session process completes
+                            auth_session.close();
                         } else {
                             eprintln!("User not found in system: {}", username);
                         }
