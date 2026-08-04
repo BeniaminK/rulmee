@@ -133,10 +133,7 @@ pub fn get_available_sessions() -> Vec<Session> {
                         let exec = section.attr("Exec");
                         
                         if let (Some(name), Some(exec)) = (name, exec) {
-                            // Basic parsing of exec string into args
-                            let args: Vec<String> = exec.split_whitespace()
-                                .map(|s| s.to_string())
-                                .collect();
+                            let args = parse_exec_string(exec);
                             
                             if !args.is_empty() {
                                 sessions.push(Session {
