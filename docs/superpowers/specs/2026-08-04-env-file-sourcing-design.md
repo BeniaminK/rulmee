@@ -1,83 +1,74 @@
-# Design Specification: Environment File Sourcing (`source` and `user_source`)
+# Session Environment & Login Shell Architecture Design
 
 **Date**: 2026-08-04  
 **Status**: Approved  
-**Target Module**: `src/env.rs` (re-exported in `src/main.rs` and `src/auth.rs`)
+**Target Modules**: `src/auth.rs`, `src/exec.rs`, `src/main.rs`
 
 ---
 
 ## 1. Overview & Objective
 
-In the C implementation of **LiDM**, `source_paths()` reads system scripts (e.g. `/etc/profile`, `/etc/environment`) and user home scripts (e.g. `~/.xprofile`, `~/.pam_environment`) line-by-line for `KEY=VALUE` environment variable definitions before launching a user desktop/shell session.
+In display managers (DMs), environment initialization and session startup follow a two-tier model:
 
-In the Rust implementation, `config.behavior.source` and `config.behavior.user_source` are defined in the `Behavior` struct in `src/config.rs` but are not yet processed or merged into the session environment.
+1. **DM/PAM Environment Assembly**: Ingesting PAM environment (`pam_getenvlist()`), POSIX user credentials (`USER`, `HOME`, `SHELL`, `LOGNAME`), display variables (`DISPLAY`, `XAUTHORITY`), and Freedesktop session variables (`XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`, `XDG_SESSION_CLASS`).
+2. **Login Shell & Wrapper Delegation**: Spawning the session process inside the target user's login shell via `$SHELL -l -c "<session_exec>"` (when `bypass_shell_login` is `false`). This delegates script sourcing (`/etc/profile`, `~/.profile`, `~/.bash_profile`, `~/.xprofile`, etc.) to the user's shell after root privileges have been dropped to the target user's UID/GID.
 
-This specification details a dedicated environment script loader module in `src/env.rs` that safely parses environment files, ignores comments, handles quotes, strips optional `export` prefixes, and uses scope/block tracking to avoid setting variables located inside unexecuted function bodies or control blocks.
-
----
-
-## 2. Architecture & File Placement
-
-A new module `src/env.rs` will be created with the public interface:
-
-```rust
-pub fn source_environment_files(
-    env: &mut HashMap<String, String>,
-    system_sources: &[String],
-    user_sources: &[String],
-    home_dir: Option<&Path>,
-);
-```
-
-### Module Responsibilities
-1. **`src/env.rs`**: Environment loader & line parser with scope depth tracking.
-2. **`src/main.rs`**: Registers `mod env;` and calls `env::source_environment_files(...)` after PAM authentication and initial `USER`/`HOME` variable setup, prior to `exec::launch_session(...)`.
+This design replaces custom root-level line-parsing of shell files with robust environment assembly and privilege-dropped login shell delegation.
 
 ---
 
-## 3. Parsing & Scope Tracking Rules
+## 2. Architecture & Component Responsibilities
 
-For each path in `system_sources` (absolute system paths) and `user_sources` (resolved relative to `home_dir` if present):
+### `src/auth.rs`
+- Extracts environment variables from the PAM session context after successful authentication.
+- Returns an `AuthSession` containing `username`, `uid`, `gid`, `home`, `shell`, and `env` (`HashMap<String, String>`).
 
-1. **Path Resolution**:
-   * If a system path is empty or non-existent, log a debug message and skip.
-   * If a user path is specified, construct `home_dir.join(path)`. If `home_dir` is `None`, log a warning and skip.
-
-2. **Line-by-Line Lexing & Scope Depth Tracking**:
-   * Maintain `block_depth: usize = 0`.
-   * For each line:
-     1. Trim leading and trailing whitespace.
-     2. Skip empty lines and lines where the first non-whitespace character is `#` (comments).
-     3. Check for block opening indicators (`{` or function header like `fn_name() {`): increment `block_depth`.
-     4. Check for block closing indicators (`}`): decrement `block_depth`.
-     5. Check for control block start keywords (`if `, `case `, `for `, `while `): skip parsing assignments on control flow lines.
-     6. **Assignment Execution Rule**: Only attempt `KEY=VALUE` extraction when `block_depth == 0` and the line is not inside a control block.
-
-3. **Key-Value Parsing**:
-   * Strip optional leading `export ` (e.g. `export PATH="/bin"` → `PATH="/bin"`).
-   * Locate the first `=` character. If no `=` is found, skip.
-   * Key extraction: `key = line[..eq_pos].trim()`.
-   * **POSIX Key Validation**: Key must match `^[a-zA-Z_][a-zA-Z0-9_]*$`. Discard invalid keys (e.g. `func()`, `[`, arithmetic statements).
-   * Value extraction: `value = line[eq_pos + 1..].trim()`.
-   * **Unquoting**: If `value` starts and ends with matching single quotes (`'`) or double quotes (`"`), strip outer quotes.
-   * **Mutation**: `env.insert(key.to_string(), value.to_string());`
+### `src/exec.rs`
+- Assembles the complete environment `HashMap`:
+  - PAM Environment variables (`pam_getenvlist()`)
+  - Core POSIX environment (`USER`, `LOGNAME`, `HOME`, `SHELL`, `PATH`)
+  - XDG & Display environment (`XDG_SESSION_TYPE`, `XDG_SESSION_CLASS`, `XDG_CURRENT_DESKTOP`, `DISPLAY`)
+- Formats command execution vectors according to `config.behavior.bypass_shell_login`:
+  - **`bypass_shell_login == false` (Default)**: Constructs `[user_shell, "-l", "-c", "exec <exec_cmd>"]` (e.g. `["/bin/bash", "-l", "-c", "exec sway"]`).
+  - **`bypass_shell_login == true`**: Executes the session binary directly (`exec_args`).
+- Performs privilege dropping inside child processes (`initgroups`, `setgid`, `setuid`) before `cmd.exec()`.
 
 ---
 
-## 4. Verification & Testing Strategy
+## 3. Environment Merging & Command Construction Rules
 
-Add exhaustive unit tests in `src/env.rs`:
+### 3.1 Environment Precedence & Merging Order
+1. **POSIX & Core User Environment**: `USER`, `LOGNAME`, `HOME`, `SHELL` (derived from system passwd record via `uzers`).
+2. **Fallback `PATH`**: Default system `PATH` if not present in PAM (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`).
+3. **XDG & Session Type Defaults**: `XDG_SESSION_TYPE` (`"wayland"`, `"x11"`, or `"tty"`), `XDG_SESSION_CLASS` (`"user"`), `XDG_CURRENT_DESKTOP` (derived from session name if available).
+4. **PAM Environment**: Overrides/merges environment variables provided by PAM modules (`pam_getenvlist()`).
+5. **Display Variables**: `DISPLAY` set dynamically for Xorg sessions.
 
-1. **Basic Key-Value**: Test `FOO=bar` and `export BAZ="qux"`.
-2. **Quoted Values**: Test `VAR="hello world"` and `SINGLE='value'`.
-3. **Comments & Empty Lines**: Verify `# comment` lines and blank lines are ignored.
-4. **Function Body Exclusion**: Verify that lines inside `tempfunc() { VAR=123 }` are ignored.
-5. **Control Block Exclusion**: Verify that lines inside `if [ ... ]; then VAR=1; fi` are ignored.
-6. **Path Integration**: Test `source_environment_files` with mock system files and user home directories via `tempfile`.
+### 3.2 Login Shell Command Formatting
+When `bypass_shell_login` is `false`:
+- Determine target shell `user_shell` (defaults to `/bin/bash` or `/bin/sh` if user's shell is unreadable).
+- Escape or format execution arguments into a single shell command string `<exec_cmd>` (e.g. `sway --unsupported-gpu`).
+- Construct execution command vector:
+  ```rust
+  vec![user_shell, "-l".to_string(), "-c".to_string(), format!("exec {}", exec_cmd)]
+  ```
+- Using `exec <exec_cmd>` ensures the desktop process replaces the intermediate subshell without leaving extra shell processes running in the background.
+
+---
+
+## 4. Testing Strategy
+
+Unit tests will be implemented in `src/exec.rs` / `src/auth.rs`:
+
+1. **Environment Assembly Test**: Verify PAM environment, POSIX user metadata, and XDG session variables merge with correct precedence into a `HashMap<String, String>`.
+2. **Shell Command Vector Generation**:
+   - Verify `build_exec_command` with `bypass_shell_login = false` returns `["/bin/bash", "-l", "-c", "exec sway"]`.
+   - Verify `build_exec_command` with `bypass_shell_login = true` returns `["sway"]`.
+   - Verify handling of multi-word exec strings and complex desktop command lines.
 
 ---
 
 ## 5. Security & Safety Considerations
 
-- **Memory/Resource Protection**: Avoid spawning subshells (`sh -c`) to parse files, preventing command injection and hangs on interactive scripts.
-- **Error Handling**: Missing files or permission denied errors log warnings gracefully without aborting session login.
+- **Privilege Separation**: User shell initialization scripts (`/etc/profile`, `~/.profile`, `~/.bashrc`, `~/.xprofile`) execute exclusively inside the child process **after** `initgroups`, `setgid`, and `setuid` drop root privileges to the unprivileged target user.
+- **Root Context Isolation**: The display manager daemon running as `root` does not attempt to parse or interpret untrusted user-controlled files.
