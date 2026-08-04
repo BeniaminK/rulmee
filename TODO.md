@@ -124,10 +124,12 @@ The Rust implementation of **LiDM** is a modern rewrite using standard Rust idio
     *   Leaks PAM session (`session.leak()`) to maintain open PAM credentials across child process execution.
     *   Extracts PAM environment variables into `HashMap<String, String>`.
 
-*   **`exec.rs` (Session Launch Execution)**
-    *   `launch_session`: Routes to `launch_xorg` or `launch_direct`.
-    *   `launch_direct`: Calls `nix::unistd::fork()`. Child drops privileges via `initgroups`, `setgid`, `setuid`, and calls `std::process::Command::new(&exec_args[0]).envs(env).exec()`. Parent calls `libc::waitpid`.
-    *   `launch_xorg`: Creates pipe via `nix::unistd::pipe()`. Forks child to run `Xorg -displayfd <fd> vt<N>`. Parent reads display number from pipe, sets `DISPLAY=:<N>`, forks second child process for desktop session (dropping user privileges and executing binary), and runs `waitpid(-1)` loop to kill the counterpart process if either Xorg or session terminates.
+*   **`exec.rs` (Session Launch Execution & Environment Assembly)**
+    *   `assemble_environment`: Merges PAM environment variables (`pam_getenvlist()`) with standard POSIX/XDG environment variables (`USER`, `LOGNAME`, `HOME`, `SHELL`, `PATH`, `XDG_SESSION_TYPE`, `XDG_SESSION_CLASS`, `DISPLAY`).
+    *   `build_exec_command`: Builds command line vector. If `bypass_shell_login` is `false`, wraps command in `$SHELL -l -c "exec <quoted_args>"`, causing shell startup files (`/etc/profile`, `~/.profile`, `~/.xprofile`) to be evaluated naturally. If `true`, executes target binary directly.
+    *   `launch_session`: Routes execution to `launch_xorg` or `launch_direct` with user shell and `bypass_shell_login` configuration.
+    *   `launch_direct`: Calls `nix::unistd::fork()`. Child drops privileges (`initgroups`, `setgid`, `setuid`), invokes `build_exec_command`, and executes with assembled environment (`cmd.exec()`). Parent waits via `libc::waitpid`.
+    *   `launch_xorg`: Creates pipe via `nix::unistd::pipe()`. Forks child to run `Xorg -displayfd <fd> vt<N>`. Parent reads display number from pipe, sets `DISPLAY=:<N>`, forks second child process for desktop session (dropping user privileges and running `build_exec_command`), and runs `waitpid(-1)` loop to kill the counterpart process if either Xorg or session terminates.
 
 *   **`console.rs` (Kernel Console Interceptor)**
     *   `ConsoleInterceptor`: Allocates a pseudoterminal via `nix::pty::openpty()`.
@@ -155,10 +157,10 @@ The Rust implementation of **LiDM** is a modern rewrite using standard Rust idio
 
 | Feature / Aspect | C Implementation | Rust Implementation | Status in Rust |
 | :--- | :--- | :--- | :--- |
-| **Shell Script Sourcing (`source`, `user_source`)** | Supported (`source_paths` reads `/etc/profile`, `~/.xprofile`, etc.) | Config fields parsed but **unused in code** | ❌ **Missing in Rust** |
-| **Login Shell Wrapping (`bypass_shell_login`)** | Supported (runs sessions via `bash -c` with `-bash` arg0 when `false`) | Config field parsed but **unused in code** | ❌ **Missing in Rust** |
+| **Shell Script Sourcing (`source`, `user_source`)** | Supported (`source_paths` reads `/etc/profile`, `~/.xprofile`, etc.) | Delegated to login shell (`$SHELL -l -c`) to evaluate scripts naturally | ✅ **Implemented via Login Shell** |
+| **Login Shell Wrapping (`bypass_shell_login`)** | Supported (runs sessions via `bash -c` with `-bash` arg0 when `false`) | Implemented in `exec.rs` (`build_exec_command` runs `$SHELL -l -c` when `false`) | ✅ **Implemented in Rust** |
 | **FIDO Hotkey / Passwordless Login** | Supported (`config.functions.fido` triggers empty pass auth) | Field and handling absent | ❌ **Missing in Rust** |
-| **PAM Session Teardown (`pam_close_session`)** | Supported (cleans PAM creds and closes session after `waitpid`) | `session.leak()` used, session **never closed** | ❌ **Missing in Rust** |
+| **PAM Session Teardown (`pam_close_session`)** | Supported (cleans PAM creds and closes session after `waitpid`) | `AuthSession` closes session & deletes creds via `close()`/`Drop` | ✅ **Implemented in Rust** |
 | **Freedesktop `Exec` String Parsing** | Full spec parser (`parse_exec_string` handles quotes, escapes, `%` codes) | Basic `split_whitespace()` | ⚠️ **Incomplete in Rust** |
 | **Config Format & Box Characters** | Custom INI format + custom drawing chars (`table_chars`) | TOML format + Ratatui border styles | 🔄 **Different Paradigm** |
 | **Process Re-execution on Refresh (F5)** | Re-executes self via `execl()` | Re-loops internally in `main.rs` | 🔄 **Different Paradigm** |
@@ -176,15 +178,14 @@ The Rust implementation of **LiDM** is a modern rewrite using standard Rust idio
 
 1.  **Environment File Sourcing & Session Environment Architecture:**
     *   In C, `source_paths()` reads system scripts (`/etc/profile`, etc.) and user home scripts (`~/.xprofile`, etc.) line-by-line for `KEY=VALUE` environment variables before launching a session.
-    *   In Rust, manual line-by-line shell script parsing is replaced with standard DM architecture: the DM initializes PAM & core system environment variables (`pam_getenvlist()`, `USER`, `HOME`, `SHELL`, `PATH`, `DISPLAY`, `XDG_*`), drops root privileges, and executes the session through a login shell (`$SHELL -l -c "<session_exec>"`) or a session wrapper script (e.g. `/etc/lidm/Xsession`), allowing user shell scripts (`/etc/profile`, `~/.profile`, `~/.xprofile`) to be evaluated naturally by the shell.
+    *   In Rust, manual line-by-line shell script parsing is replaced with standard DM architecture: `assemble_environment` merges PAM environment variables (`pam_getenvlist()`) with POSIX/XDG standards (`USER`, `HOME`, `SHELL`, `PATH`, `DISPLAY`, `XDG_*`), drops root privileges, and executes the session through a login shell (`$SHELL -l -c "exec <cmd>"`), allowing user shell scripts (`/etc/profile`, `~/.profile`, `~/.xprofile`) to be evaluated naturally by the shell.
 
 2.  **Login Shell Execution (`bypass_shell_login`):**
     *   In C, if `bypass_shell_login` is `false` (default), sessions run inside `bash -c "<exec_cmd>"` with `argv[0] = "-bash"`, causing `bash` to run as a login shell and initialize user environment files.
-    *   In Rust, `exec.rs` always executes the target binary directly via `std::process::Command::new()`, ignoring `bypass_shell_login`.
+    *   In Rust, `exec.rs` implements `build_exec_command()`, which respects `bypass_shell_login`. When `false`, it executes via `$SHELL -l -c "exec <quoted_args>"`; when `true`, it executes the target binary arguments directly.
 
 3.  **PAM Session Closure & Teardown:**
-    *   In C, after `waitpid` detects child session termination, the parent process calls `pam_setcred(PAM_DELETE_CRED)`, `pam_close_session()`, and `pam_end()`.
-    *   In Rust, `auth.rs` calls `session.leak()`. No post-session handler exists to close the PAM session, leaving logind/UTMP/PAM credentials open.
+    *   Implemented in Rust via `AuthSession` RAII lifecycle management. When `exec::launch_session` finishes waiting for the child process (`waitpid`), `auth_session.close()` (or `AuthSession::drop`) invokes `context.unleak_session(token)` and `session.close()`, calling `pam_close_session()` and `pam_setcred(PAM_DELETE_CRED)` to deregister the logind session.
 
 4.  **FIDO / Passwordless Hotkey:**
     *   In C, pressing the configured `fido` function key attempts login with an empty password.
@@ -203,7 +204,7 @@ The Rust implementation of **LiDM** is a modern rewrite using standard Rust idio
   - Pass merged environment to child process after dropping privileges (`setuid`/`setgid`).
   - Implement session execution via login shell / session wrapper (`$SHELL -l -c "<cmd>"` or `/etc/lidm/Xsession`) when `config.behavior.bypass_shell_login` is `false`, allowing user shell scripts (`/etc/profile`, `~/.profile`, `~/.xprofile`) to be evaluated naturally by the user shell rather than manually parsing `KEY=VALUE` lines.
 
-- [ ] **[P0] PAM Session Teardown**
+- [x] **[P0] PAM Session Teardown**
   - Modify `auth.rs` / `exec.rs` to handle PAM session cleanup after `waitpid` finishes, ensuring `pam_close_session` and `pam_setcred(DELETE)` are invoked.
 
 - [ ] **[P1] Freedesktop `Exec` Parsing**
