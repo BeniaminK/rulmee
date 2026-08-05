@@ -7,7 +7,7 @@ This document provides a detailed technical comparison between the C implementat
 > - [x] **[P0] PAM Session Teardown** (Completed — `AuthSession` RAII `close()`/`Drop` executes `pam_close_session`)
 > - [x] **[P1] Freedesktop `Exec` Parsing** (Completed — `parse_exec_string` handles quotes & `%` specifiers)
 > - [ ] **[P1] FIDO Hotkey Support** (Pending — requires `fido` key handling in `UIAdapter`)
-> - [ ] **[P2] Process Group & Signal Teardown** (Pending — requires `setpgid` and `SIGTERM` forwarding)
+> - [x] **[P2] Process Group & Signal Teardown** (Completed — `setpgid` process group isolation & `SIGTERM` cleanup handler)
 
 ---
 
@@ -222,5 +222,5 @@ The Rust implementation of **LiDM** is a modern rewrite using standard Rust idio
   - Add `fido: Option<String>` to `Functions` in `config.rs`.
   - Implement FIDO key detection in `UIAdapter` and trigger empty password login flow.
 
-- [ ] **[P2] Process Group & Signal Teardown**
+- [x] **[P2] Process Group & Signal Teardown**
   - Implement process group creation (`setpgid`) and `SIGTERM` cleanup handling for spawned session processes.
