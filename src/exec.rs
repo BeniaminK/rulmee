@@ -1,10 +1,29 @@
 use std::ffi::c_int;
 use std::os::unix::io::AsRawFd;
-use nix::unistd::{fork, ForkResult, setuid, setgid, initgroups, Uid, Gid, close, read};
+use nix::unistd::{fork, ForkResult, setuid, setgid, initgroups, setpgid, getpid, Uid, Gid, close, read};
 use std::ffi::CString;
 use std::collections::HashMap;
 use std::process::Command;
 use std::os::unix::process::CommandExt;
+use std::sync::atomic::{AtomicI32, Ordering};
+
+pub static ACTIVE_CHILD_PGID: AtomicI32 = AtomicI32::new(0);
+
+pub fn get_active_child_pgid() -> i32 {
+    ACTIVE_CHILD_PGID.load(Ordering::SeqCst)
+}
+
+pub fn set_active_child_pgid(pgid: i32) {
+    ACTIVE_CHILD_PGID.store(pgid, Ordering::SeqCst);
+}
+
+pub fn drop_privileges(user: &str, uid: u32, gid: u32) -> Result<(), String> {
+    let user_cstr = CString::new(user).map_err(|e| format!("Invalid username string: {}", e))?;
+    initgroups(&user_cstr, Gid::from_raw(gid)).map_err(|e| format!("initgroups failed: {}", e))?;
+    setgid(Gid::from_raw(gid)).map_err(|e| format!("setgid failed: {}", e))?;
+    setuid(Uid::from_raw(uid)).map_err(|e| format!("setuid failed: {}", e))?;
+    Ok(())
+}
 
 pub fn assemble_environment(
     pam_env: &HashMap<String, String>,
@@ -99,11 +118,12 @@ fn launch_direct(
 ) -> Result<(), String> {
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {
-            // Drop privileges
-            let user_cstr = CString::new(user).unwrap();
-            initgroups(&user_cstr, Gid::from_raw(gid)).unwrap();
-            setgid(Gid::from_raw(gid)).unwrap();
-            setuid(Uid::from_raw(uid)).unwrap();
+            let pid = getpid();
+            let _ = setpgid(pid, pid);
+            if let Err(e) = drop_privileges(user, uid, gid) {
+                eprintln!("Failed to drop privileges: {}", e);
+                std::process::exit(1);
+            }
 
             let (prog, args) = build_exec_command(exec_args, user_shell, bypass_shell_login);
 
@@ -116,8 +136,11 @@ fn launch_direct(
             std::process::exit(1);
         }
         Ok(ForkResult::Parent { child }) => {
+            let _ = setpgid(child, child);
+            set_active_child_pgid(child.as_raw());
             let mut status: i32 = 0;
             unsafe { libc::waitpid(child.as_raw(), &mut status, 0) };
+            set_active_child_pgid(0);
             Ok(())
         }
         Err(e) => Err(format!("Fork failed: {}", e)),
@@ -144,10 +167,8 @@ fn launch_xorg(
             // Xorg server child
             close(pipe_read.as_raw_fd()).unwrap();
             let display_fd = pipe_write.as_raw_fd();
-            
-            // Xorg needs to run as root usually, or has its own setuid
-            // but lidm C version forks and then runs start_xorg_server
-            // start_xorg_server does NOT drop privileges before execle(xorg_path, ...)
+            let pid = getpid();
+            let _ = setpgid(pid, pid);
             
             let mut cmd = Command::new("Xorg");
             cmd.arg("-displayfd").arg(display_fd.to_string());
@@ -158,6 +179,7 @@ fn launch_xorg(
             std::process::exit(1);
         }
         Ok(ForkResult::Parent { child: xorg_pid }) => {
+            let _ = setpgid(xorg_pid, xorg_pid);
             close(pipe_write.as_raw_fd()).unwrap();
             let mut display_buf = [0u8; 16];
             let n = read(pipe_read.as_raw_fd(), &mut display_buf).map_err(|e| format!("Read pipe failed: {}", e))?;
@@ -170,10 +192,12 @@ fn launch_xorg(
             match unsafe { fork() } {
                 Ok(ForkResult::Child) => {
                     // Session child
-                    let user_cstr = CString::new(user).unwrap();
-                    initgroups(&user_cstr, Gid::from_raw(gid)).unwrap();
-                    setgid(Gid::from_raw(gid)).unwrap();
-                    setuid(Uid::from_raw(uid)).unwrap();
+                    let pid = getpid();
+                    let _ = setpgid(pid, pid);
+                    if let Err(e) = drop_privileges(user, uid, gid) {
+                        eprintln!("Failed to drop privileges: {}", e);
+                        std::process::exit(1);
+                    }
 
                     let (prog, args) = build_exec_command(exec_args, user_shell, bypass_shell_login);
 
@@ -186,6 +210,8 @@ fn launch_xorg(
                     std::process::exit(1);
                 }
                 Ok(ForkResult::Parent { child: session_pid }) => {
+                    let _ = setpgid(session_pid, session_pid);
+                    set_active_child_pgid(session_pid.as_raw());
                     // Wait for either Xorg or Session to die
                     let mut status: i32 = 0;
                     loop {
@@ -197,6 +223,7 @@ fn launch_xorg(
                             break;
                         }
                     }
+                    set_active_child_pgid(0);
                     Ok(())
                 }
                 Err(e) => Err(format!("Fork failed: {}", e)),
@@ -261,6 +288,22 @@ mod tests {
 
         assert_eq!(prog, "/bin/bash");
         assert_eq!(args, vec!["-l", "-c", "exec 'sway' '--config' 'my config.conf'"]);
+    }
+
+    #[test]
+    fn test_active_child_pgid_state() {
+        assert_eq!(get_active_child_pgid(), 0);
+        set_active_child_pgid(1234);
+        assert_eq!(get_active_child_pgid(), 1234);
+        set_active_child_pgid(0);
+        assert_eq!(get_active_child_pgid(), 0);
+    }
+
+    #[test]
+    fn test_drop_privileges_invalid_user_nul_byte() {
+        let result = drop_privileges("user\0invalid", 1000, 1000);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid username string"));
     }
 }
 
