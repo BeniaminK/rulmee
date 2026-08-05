@@ -13,6 +13,7 @@ mod ui_state;
 mod users;
 mod vt;
 mod launch_state;
+mod signal_handler;
 
 use crate::session::SessionType;
 use crate::ui::{UI, UIResult};
@@ -38,6 +39,10 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
+
+    if let Err(e) = signal_handler::setup_signal_handler() {
+        eprintln!("Warning: Failed to setup signal handler: {}", e);
+    }
 
     let console_buffer: console::ConsoleBuffer = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::with_capacity(50)));
 
