@@ -1,5 +1,5 @@
 use std::fs;
-use freedesktop_entry_parser::parse_entry;
+use freedesktop::ApplicationEntry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionType {
@@ -115,6 +115,17 @@ pub fn parse_exec_string(exec: &str) -> Vec<String> {
     args
 }
 
+pub trait ApplicationEntryExt {
+    fn desktop_names(&self) -> Option<String>;
+}
+
+impl ApplicationEntryExt for ApplicationEntry {
+    fn desktop_names(&self) -> Option<String> {
+        self.get_string("DesktopNames")
+            .or_else(|| self.get_vec("DesktopNames").map(|v| v.join(";")))
+    }
+}
+
 pub fn get_available_sessions() -> Vec<Session> {
     let mut sessions = Vec::new();
 
@@ -128,21 +139,18 @@ pub fn get_available_sessions() -> Vec<Session> {
             for entry in entries.flatten() {
                 let fpath = entry.path();
                 if fpath.extension().and_then(|s| s.to_str()) == Some("desktop") {
-                    if let Ok(desktop_entry) = parse_entry(&fpath) {
-                        let section = desktop_entry.section("Desktop Entry");
-                        let name = section.attr("Name");
-                        let exec = section.attr("Exec");
-                        
-                        if let (Some(name), Some(exec)) = (name, exec) {
-                            let args = parse_exec_string(exec);
-                            
-                            if !args.is_empty() {
-                                sessions.push(Session {
-                                    name: name.to_string(),
-                                    exec: ExecType::Desktop(args),
-                                    session_type: *session_type,
-                                    desktop_names: None,
-                                });
+                    if let Ok(app) = ApplicationEntry::try_from_path(&fpath) {
+                        if app.should_show() {
+                            if let (Some(name), Some(exec)) = (app.name(), app.exec()) {
+                                let args = parse_exec_string(&exec);
+                                if !args.is_empty() {
+                                    sessions.push(Session {
+                                        name: name.to_string(),
+                                        exec: ExecType::Desktop(args),
+                                        session_type: *session_type,
+                                        desktop_names: app.desktop_names().map(String::from),
+                                    });
+                                }
                             }
                         }
                     }
@@ -224,6 +232,25 @@ mod tests {
             parse_exec_string("echo % 100"),
             vec!["echo", "%", "100"]
         );
+    }
+
+    #[test]
+    fn test_parse_exec_string_quotes_and_specifiers() {
+        let input = "sway --config \"/etc/sway/config file\" %u %F";
+        let args = parse_exec_string(input);
+        assert_eq!(args, vec!["sway", "--config", "/etc/sway/config file"]);
+    }
+
+    #[test]
+    fn test_get_available_sessions() {
+        let sessions = get_available_sessions();
+        for session in sessions {
+            assert!(!session.name.is_empty());
+            match &session.exec {
+                ExecType::Desktop(args) => assert!(!args.is_empty()),
+                ExecType::Shell(sh) => assert!(!sh.is_empty()),
+            }
+        }
     }
 }
 
