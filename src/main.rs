@@ -130,18 +130,23 @@ fn main() {
                     (custom_user, "/bin/bash".to_string())
                 };
 
-                let (session_name, exec_args, is_xorg) =
+                let (session_name, exec_args, is_xorg, desktop_names) =
                     if session_idx < sessions.len() && custom_session.is_empty() {
                         let s = &sessions[session_idx];
                         let args = match &s.exec {
                             session::ExecType::Shell(sh) => vec![sh.clone()],
                             session::ExecType::Desktop(args) => args.clone(),
                         };
-                        (s.name.clone(), args, s.session_type == SessionType::Xorg)
+                        (
+                            s.name.clone(),
+                            args,
+                            s.session_type == SessionType::Xorg,
+                            s.desktop_names.clone(),
+                        )
                     } else if session_idx == sessions.len() && custom_session.is_empty() {
-                        (shell.clone(), vec![shell.clone()], false)
+                        (shell.clone(), vec![shell.clone()], false, None)
                     } else {
-                        (custom_session.clone(), vec![custom_session], false)
+                        (custom_session.clone(), vec![custom_session], false, None)
                     };
 
                 let _ = launch_state::write_launch_state(&launch_state::LaunchState {
@@ -167,6 +172,7 @@ fn main() {
                                 &shell,
                                 session_type_str,
                                 None,
+                                desktop_names.as_deref(),
                             );
 
                             if let Err(e) = exec::launch_session(

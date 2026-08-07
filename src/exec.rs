@@ -32,6 +32,7 @@ pub fn assemble_environment(
     shell: &str,
     session_type: &str,
     display: Option<&str>,
+    desktop_names: Option<&str>,
 ) -> HashMap<String, String> {
     let mut env = HashMap::new();
 
@@ -48,6 +49,9 @@ pub fn assemble_environment(
     // 2. Freedesktop / XDG Standards
     env.insert("XDG_SESSION_TYPE".to_string(), session_type.to_string());
     env.insert("XDG_SESSION_CLASS".to_string(), "user".to_string());
+    if let Some(names) = desktop_names {
+        env.insert("XDG_CURRENT_DESKTOP".to_string(), names.to_string());
+    }
 
     // 3. Merged PAM Environment
     for (k, v) in pam_env {
@@ -244,7 +248,7 @@ mod tests {
         pam_env.insert("PAM_VAR".to_string(), "pam_val".to_string());
         pam_env.insert("PATH".to_string(), "/custom/path".to_string());
 
-        let env = assemble_environment(&pam_env, "alice", "/home/alice", "/bin/zsh", "wayland", None);
+        let env = assemble_environment(&pam_env, "alice", "/home/alice", "/bin/zsh", "wayland", None, None);
 
         assert_eq!(env.get("USER").map(|s| s.as_str()), Some("alice"));
         assert_eq!(env.get("LOGNAME").map(|s| s.as_str()), Some("alice"));
@@ -254,6 +258,22 @@ mod tests {
         assert_eq!(env.get("XDG_SESSION_CLASS").map(|s| s.as_str()), Some("user"));
         assert_eq!(env.get("PAM_VAR").map(|s| s.as_str()), Some("pam_val"));
         assert_eq!(env.get("PATH").map(|s| s.as_str()), Some("/custom/path"));
+        assert_eq!(env.get("XDG_CURRENT_DESKTOP"), None);
+    }
+
+    #[test]
+    fn test_assemble_environment_xdg_current_desktop() {
+        let pam_env = HashMap::new();
+        let env = assemble_environment(
+            &pam_env,
+            "bob",
+            "/home/bob",
+            "/bin/bash",
+            "wayland",
+            None,
+            Some("Sway:Wayland"),
+        );
+        assert_eq!(env.get("XDG_CURRENT_DESKTOP").map(|s| s.as_str()), Some("Sway:Wayland"));
     }
 
     #[test]
