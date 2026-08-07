@@ -19,6 +19,7 @@ pub struct Session {
     pub name: String,
     pub exec: ExecType,
     pub session_type: SessionType,
+    pub desktop_names: Option<String>,
 }
 
 const SOURCES: &[(SessionType, &str)] = &[
@@ -140,6 +141,7 @@ pub fn get_available_sessions() -> Vec<Session> {
                                     name: name.to_string(),
                                     exec: ExecType::Desktop(args),
                                     session_type: *session_type,
+                                    desktop_names: None,
                                 });
                             }
                         }
