@@ -96,6 +96,7 @@ impl UI {
                     Some(UIResult::Login(s, u, p, cs, cu))
                 }
                 HotkeyAction::Theme => {
+                    log::debug!("handle_key_event: F3 (theme) hotkey pressed");
                     self.adapter.cycle_theme();
                     None
                 }

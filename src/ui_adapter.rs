@@ -224,13 +224,24 @@ impl UIAdapter {
 
     pub fn cycle_theme(&mut self) {
         if self.state.themes.is_empty() {
+            log::debug!("cycle_theme: no themes available, skipping");
             return;
         }
+        let old_idx = self.state.current_theme_idx;
+        let old_name = self.state.themes[old_idx].name.clone();
         self.state.current_theme_idx =
             (self.state.current_theme_idx + 1) % self.state.themes.len();
-        self.config.colors = self.state.themes[self.state.current_theme_idx]
-            .colors
-            .clone();
+        let new_idx = self.state.current_theme_idx;
+        let new_name = &self.state.themes[new_idx].name;
+        log::info!(
+            "cycle_theme: switching from '{}' (idx {}) to '{}' (idx {}) [{} themes total]",
+            old_name,
+            old_idx,
+            new_name,
+            new_idx,
+            self.state.themes.len()
+        );
+        self.config.colors = self.state.themes[new_idx].colors.clone();
     }
 
     // --- Result extraction ---
