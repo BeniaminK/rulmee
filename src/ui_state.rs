@@ -1,6 +1,10 @@
 use strum::{EnumCount, VariantArray};
 use tui_input::Input;
 
+use crate::theme::Theme;
+
+pub use crate::auth::PamMessage;
+
 #[derive(
     Debug, PartialEq, Eq, Clone, Copy, strum_macros::VariantArray, strum_macros::EnumCount,
 )]
@@ -32,4 +36,21 @@ pub struct UIState {
     /// Whether the user is typing a custom value (vs selecting from a list)
     pub custom_session: bool,
     pub custom_user: bool,
+    pub auth_error: bool,
+    pub pam_messages: Vec<PamMessage>,
+    pub themes: Vec<Theme>,
+    pub current_theme_idx: usize,
+}
+
+impl UIState {
+    /// Returns login data tuple formatted for FIDO passwordless authentication (empty password).
+    pub fn fido_login_tuple(&self) -> (usize, usize, String, String, String) {
+        (
+            self.selected_session_idx,
+            self.selected_user_idx,
+            String::new(),
+            self.session_input.value().to_string(),
+            self.user_input.value().to_string(),
+        )
+    }
 }

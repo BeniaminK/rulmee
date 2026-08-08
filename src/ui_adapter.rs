@@ -1,17 +1,20 @@
 use crate::config::Config;
 use crate::console::ConsoleBuffer;
 use crate::session::{Session, SessionType};
-use crate::ui_state::{Field, UIState};
+use crate::ui_state::{Field, PamMessage, UIState};
 use crate::users::LocalUser;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::style::Style;
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum HotkeyAction {
     Poweroff,
     Reboot,
     Refresh,
+    Fido,
+    Theme,
 }
 
 pub struct UIAdapter {
@@ -30,6 +33,8 @@ impl UIAdapter {
         initial_user: Option<&str>,
         initial_session: Option<&str>,
         console_buffer: Option<ConsoleBuffer>,
+        pam_messages: Vec<PamMessage>,
+        auth_error: bool,
     ) -> Self {
         let include_defshell = config.behavior.include_defshell;
 
@@ -57,6 +62,8 @@ impl UIAdapter {
             None => (0, false, Input::default()),
         };
 
+        let themes = crate::theme::discover_themes(&config.colors);
+
         Self {
             config,
             sessions,
@@ -70,23 +77,53 @@ impl UIAdapter {
                 focused_field: Field::User,
                 custom_session,
                 custom_user,
+                auth_error,
+                pam_messages,
+                themes,
+                current_theme_idx: 0,
             },
             console_buffer,
         }
     }
 
+    pub fn pam_messages(&self) -> &[PamMessage] {
+        &self.state.pam_messages
+    }
+
+    pub fn clear_pam_messages(&mut self) {
+        self.state.pam_messages.clear();
+    }
+
+    #[allow(dead_code)]
+    pub fn auth_error(&self) -> bool {
+        self.state.auth_error
+    }
+
+    #[allow(dead_code)]
+    pub fn set_auth_error(&mut self, auth_error: bool) {
+        self.state.auth_error = auth_error;
+    }
+
+    pub fn clear_auth_error(&mut self) {
+        self.state.auth_error = false;
+    }
+
     // --- State mutations ---
 
     pub fn move_focus_up(&mut self) {
+        self.clear_auth_error();
         self.state.focused_field = self.state.focused_field.prev();
     }
 
     pub fn move_focus_down(&mut self) {
+        self.clear_auth_error();
         self.state.focused_field = self.state.focused_field.next();
     }
 
     /// Left/Right always cycles — resets custom mode so typed values can be changed.
     pub fn handle_field_key(&mut self, key: KeyEvent) {
+        self.clear_auth_error();
+        self.clear_pam_messages();
         match self.state.focused_field {
             Field::Session => match key.code {
                 KeyCode::Left => self.change_session(-1),
@@ -170,6 +207,12 @@ impl UIAdapter {
         if is(&self.config.functions.refresh) {
             return Some(HotkeyAction::Refresh);
         }
+        if is(&self.config.functions.fido) {
+            return Some(HotkeyAction::Fido);
+        }
+        if is(&self.config.functions.theme) {
+            return Some(HotkeyAction::Theme);
+        }
         None
     }
 
@@ -177,6 +220,17 @@ impl UIAdapter {
         k.strip_prefix('F')
             .and_then(|n| n.parse::<u8>().ok())
             .map(KeyCode::F)
+    }
+
+    pub fn cycle_theme(&mut self) {
+        if self.state.themes.is_empty() {
+            return;
+        }
+        self.state.current_theme_idx =
+            (self.state.current_theme_idx + 1) % self.state.themes.len();
+        self.config.colors = self.state.themes[self.state.current_theme_idx]
+            .colors
+            .clone();
     }
 
     // --- Result extraction ---
@@ -191,17 +245,21 @@ impl UIAdapter {
         )
     }
 
+    pub fn fido_login_data(&self) -> (usize, usize, String, String, String) {
+        self.state.fido_login_tuple()
+    }
+
     // --- View queries (called by renderer) ---
 
     pub fn focused_field(&self) -> Field {
         self.state.focused_field
     }
 
-    pub fn field_label(&self, field: Field) -> String {
+    pub fn field_label(&self, field: Field) -> &str {
         match field {
-            Field::Session => self.session_label().to_string(),
-            Field::User => self.config.strings.e_user.clone(),
-            Field::Password => self.config.strings.e_passwd.clone(),
+            Field::Session => self.session_label(),
+            Field::User => &self.config.strings.e_user,
+            Field::Password => &self.config.strings.e_passwd,
         }
     }
 
@@ -242,7 +300,13 @@ impl UIAdapter {
                 Style::from(color)
             }
             Field::User => Style::from(self.config.colors.e_user.clone()),
-            Field::Password => Style::from(self.config.colors.e_passwd.clone()),
+            Field::Password => {
+                if self.state.auth_error {
+                    Style::from(self.config.colors.e_badpasswd.clone())
+                } else {
+                    Style::from(self.config.colors.e_passwd.clone())
+                }
+            }
         }
     }
 
@@ -287,12 +351,12 @@ impl UIAdapter {
         }
     }
 
-    fn session_label(&self) -> &'static str {
+    pub fn session_label(&self) -> &str {
         match self.selected_session_type() {
-            Some(SessionType::Xorg) => "xorg",
-            Some(SessionType::Wayland) => "wayland",
-            Some(SessionType::Shell) => "shell",
-            None => "shell",
+            Some(SessionType::Xorg) => &self.config.strings.s_xorg,
+            Some(SessionType::Wayland) => &self.config.strings.s_wayland,
+            Some(SessionType::Shell) => &self.config.strings.s_shell,
+            None => &self.config.strings.s_shell,
         }
     }
 
@@ -304,5 +368,125 @@ impl UIAdapter {
                 .get(self.state.selected_session_idx)
                 .map(|s| s.session_type)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::session::{ExecType, Session, SessionType};
+
+    #[test]
+    fn test_configured_session_type_strings() {
+        let mut config = Config::default();
+        config.strings.s_wayland = "Wayland Display".to_string();
+        config.strings.s_xorg = "X11 Server".to_string();
+        config.strings.s_shell = "Terminal Shell".to_string();
+
+        let sessions = vec![
+            Session {
+                name: "Sway".to_string(),
+                exec: ExecType::Desktop(vec!["sway".to_string()]),
+                session_type: SessionType::Wayland,
+                desktop_names: None,
+            },
+            Session {
+                name: "i3".to_string(),
+                exec: ExecType::Desktop(vec!["i3".to_string()]),
+                session_type: SessionType::Xorg,
+                desktop_names: None,
+            },
+            Session {
+                name: "bash".to_string(),
+                exec: ExecType::Shell("bash".to_string()),
+                session_type: SessionType::Shell,
+                desktop_names: None,
+            },
+        ];
+
+        let mut adapter = UIAdapter::new(config, sessions, vec![], None, None, None, vec![], false);
+
+        // Initially index 0: Sway (Wayland)
+        assert_eq!(adapter.session_label(), "Wayland Display");
+        assert_eq!(adapter.field_label(Field::Session), "Wayland Display");
+
+        // Cycle to index 1: i3 (Xorg)
+        adapter.change_session(1);
+        assert_eq!(adapter.session_label(), "X11 Server");
+        assert_eq!(adapter.field_label(Field::Session), "X11 Server");
+
+        // Cycle to index 2: bash (Shell)
+        adapter.change_session(1);
+        assert_eq!(adapter.session_label(), "Terminal Shell");
+        assert_eq!(adapter.field_label(Field::Session), "Terminal Shell");
+    }
+
+    #[test]
+    fn test_auth_error_styling_and_clearing() {
+        let config = Config::default();
+        let mut adapter =
+            UIAdapter::new(config.clone(), vec![], vec![], None, None, None, vec![], true);
+
+        assert!(adapter.auth_error());
+        assert_eq!(
+            adapter.field_value_style(Field::Password),
+            Style::from(config.colors.e_badpasswd.clone())
+        );
+
+        adapter.clear_auth_error();
+
+        assert!(!adapter.auth_error());
+        assert_eq!(
+            adapter.field_value_style(Field::Password),
+            Style::from(config.colors.e_passwd.clone())
+        );
+    }
+
+    #[test]
+    fn test_fido_hotkey_detection_and_empty_password_flow() {
+        let mut config = Config::default();
+        config.functions.fido = Some("F3".to_string());
+        config.strings.f_fido = Some("fido_key".to_string());
+
+        let adapter = UIAdapter::new(config, vec![], vec![], None, None, None, vec![], false);
+
+        assert_eq!(
+            adapter.check_hotkey(crossterm::event::KeyCode::F(3)),
+            Some(HotkeyAction::Fido)
+        );
+
+        let (_, _, password, _, _) = adapter.fido_login_data();
+        assert_eq!(password, "");
+    }
+
+    #[test]
+    fn test_theme_hotkey_detection_and_cycling() {
+        let config = Config::default();
+        let mut adapter = UIAdapter::new(
+            config,
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            None,
+            Vec::new(),
+            false,
+        );
+
+        // F3 is the default theme hotkey
+        assert_eq!(
+            adapter.check_hotkey(KeyCode::F(3)),
+            Some(HotkeyAction::Theme)
+        );
+
+        // Themes should contain at least the default theme
+        assert!(!adapter.state.themes.is_empty());
+        assert_eq!(adapter.state.current_theme_idx, 0);
+
+        // Cycling with a single theme should wrap back to 0
+        let initial_len = adapter.state.themes.len();
+        adapter.cycle_theme();
+        assert_eq!(adapter.state.current_theme_idx, 1 % initial_len);
     }
 }
