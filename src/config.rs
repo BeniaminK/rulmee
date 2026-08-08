@@ -2,12 +2,38 @@ use crate::colors::Colors;
 use serde::Deserialize;
 use std::path::Path;
 
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct CharsConfig {
+    pub hb: String,
+    pub vb: String,
+    pub ctl: String,
+    pub ctr: String,
+    pub cbl: String,
+    pub cbr: String,
+}
+
+impl Default for CharsConfig {
+    fn default() -> Self {
+        Self {
+            hb: "─".to_string(),
+            vb: "│".to_string(),
+            ctl: "┌".to_string(),
+            ctr: "┐".to_string(),
+            cbl: "└".to_string(),
+            cbr: "┘".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(default)]
 pub struct Functions {
     pub poweroff: Option<String>,
     pub reboot: Option<String>,
     pub refresh: Option<String>,
+    pub fido: Option<String>,
+    pub theme: Option<String>,
 }
 
 impl Default for Functions {
@@ -16,6 +42,8 @@ impl Default for Functions {
             poweroff: Some("F1".to_string()),
             reboot: Some("F2".to_string()),
             refresh: Some("F5".to_string()),
+            fido: None,
+            theme: Some("F3".to_string()),
         }
     }
 }
@@ -26,6 +54,8 @@ pub struct Strings {
     pub f_poweroff: String,
     pub f_reboot: String,
     pub f_refresh: String,
+    pub f_fido: Option<String>,
+    pub f_theme: Option<String>,
     pub e_user: String,
     pub e_passwd: String,
     pub s_wayland: String,
@@ -42,6 +72,8 @@ impl Default for Strings {
             f_poweroff: "poweroff".to_string(),
             f_reboot: "reboot".to_string(),
             f_refresh: "refresh".to_string(),
+            f_fido: Some("fido".to_string()),
+            f_theme: Some("theme".to_string()),
             e_user: "user".to_string(),
             e_passwd: "password".to_string(),
             s_wayland: "wayland".to_string(),
@@ -86,6 +118,7 @@ impl Default for Behavior {
 #[serde(default)]
 pub struct Config {
     pub colors: Colors,
+    pub chars: CharsConfig,
     pub functions: Functions,
     pub strings: Strings,
     pub behavior: Behavior,
@@ -124,6 +157,12 @@ hb = "="
 
         // Explicitly defined fields in TOML
         assert_eq!(config.colors.fg.color.as_deref(), Some("#FFFFFF"));
+        assert_eq!(config.chars.hb, "=");
+        assert_eq!(config.chars.vb, "│");
+        assert_eq!(config.chars.ctl, "┌");
+        assert_eq!(config.chars.ctr, "┐");
+        assert_eq!(config.chars.cbl, "└");
+        assert_eq!(config.chars.cbr, "┘");
 
         // Missing fields should perfectly retain their rich defaults from Config::default()
         let default_config = Config::default();
@@ -143,5 +182,30 @@ hb = "="
             config.behavior.refresh_rate,
             default_config.behavior.refresh_rate
         ); // 100
+    }
+
+    #[test]
+    fn test_fido_config_defaults_and_parsing() {
+        let default_config = Config::default();
+        assert_eq!(default_config.functions.fido, None);
+        assert_eq!(default_config.strings.f_fido, Some("fido".to_string()));
+
+        let toml_str = r##"
+[functions]
+fido = "F3"
+
+[strings]
+f_fido = "yubikey"
+"##;
+        let config: Config = toml::from_str(toml_str).expect("Failed to parse TOML");
+        assert_eq!(config.functions.fido.as_deref(), Some("F3"));
+        assert_eq!(config.strings.f_fido.as_deref(), Some("yubikey"));
+    }
+
+    #[test]
+    fn test_theme_config_defaults() {
+        let config = Config::default();
+        assert_eq!(config.functions.theme.as_deref(), Some("F3"));
+        assert_eq!(config.strings.f_theme.as_deref(), Some("theme"));
     }
 }
