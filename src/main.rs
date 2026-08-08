@@ -7,6 +7,7 @@ mod logging;
 mod macros;
 mod session;
 mod sys;
+mod theme;
 mod ui;
 mod ui_adapter;
 mod ui_state;
@@ -23,11 +24,23 @@ use std::ffi::c_int;
 use uzers::os::unix::UserExt;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "LiDM: Lightweight Display Manager")]
+#[command(
+    version = concat!(
+        env!("CARGO_PKG_VERSION"),
+        " (git ",
+        env!("LIDM_GIT_REV"),
+        ", build date ",
+        env!("LIDM_BUILD_TS"),
+        ", compiler ",
+        env!("LIDM_COMPILER_VER"),
+        ")"
+    ),
+    about = "LiDM: Lightweight Display Manager"
+)]
 struct Args {
     #[arg(help = "VT number to switch to")]
     vt: Option<c_int>,
-    #[arg(help = "Path to log file")]
+    #[arg(help = "Path to log file (overridden by LIDM_LOG env var)")]
     log_file: Option<String>,
     #[arg(
         env = "LIDM_CONF",
@@ -46,7 +59,8 @@ fn main() {
 
     let console_buffer: console::ConsoleBuffer = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::with_capacity(50)));
 
-    if let Err(e) = logging::initialize_logging(args.log_file.as_deref(), Some(console_buffer.clone())) {
+    let resolved_log_path = logging::resolve_log_path(args.log_file.as_deref());
+    if let Err(e) = logging::initialize_logging(Some(&resolved_log_path), Some(console_buffer.clone())) {
         eprintln!("Failed to initialize logging: {}", e);
     }
 
@@ -59,6 +73,9 @@ fn main() {
         },
         None => (),
     }
+
+    let mut pam_messages = Vec::new();
+    let mut auth_failed = false;
 
     loop {
         // Load config
@@ -105,12 +122,14 @@ fn main() {
         };
 
         let mut ui = UI::new(
-            config,
+            config.clone(),
             sessions.clone(),
             users.clone(),
             initial_user,
             initial_session,
             ui_console_buffer,
+            pam_messages.clone(),
+            auth_failed,
         );
 
         let ui_result = ui.run();
@@ -159,6 +178,8 @@ fn main() {
                     std::env::var("LIDM_PAM_SERVICE").unwrap_or_else(|_| "login".to_string());
                 match auth::authenticate(&username, &password, &pam_service) {
                     Ok(mut auth_session) => {
+                        pam_messages.clear();
+                        auth_failed = false;
                         if let Some(u) = uzers::get_user_by_name(&username) {
                             let home_dir = u.home_dir().to_string_lossy().into_owned();
                             let uid = u.uid();
@@ -173,6 +194,8 @@ fn main() {
                                 session_type_str,
                                 None,
                                 desktop_names.as_deref(),
+                                &config.behavior.source,
+                                &config.behavior.user_source,
                             );
 
                             if let Err(e) = exec::launch_session(
@@ -195,9 +218,16 @@ fn main() {
                             eprintln!("User not found in system: {}", username);
                         }
                     }
-                    Err(e) => {
-                        eprintln!("Auth failed: {}", e);
-                        // Continue loop back to UI
+                    Err(auth_err) => {
+                        eprintln!("Auth failed: {}", auth_err);
+                        auth_failed = true;
+                        pam_messages = auth_err.pam_messages;
+                        if pam_messages.is_empty() {
+                            pam_messages.push(auth::PamMessage {
+                                msg_type: auth::PamMessageType::Error,
+                                message: auth_err.message.clone(),
+                            });
+                        }
                     }
                 }
         } else {
