@@ -341,11 +341,14 @@ impl Widget for &UI {
         // Footer
         let f_fido_default = "fido".to_string();
         let f_fido_label = cfg.strings.f_fido.as_ref().unwrap_or(&f_fido_default);
+        let f_theme_default = "theme".to_string();
+        let f_theme_label = cfg.strings.f_theme.as_ref().unwrap_or(&f_theme_default);
         let hotkeys = [
             (&cfg.functions.poweroff, &cfg.strings.f_poweroff),
             (&cfg.functions.reboot, &cfg.strings.f_reboot),
             (&cfg.functions.refresh, &cfg.strings.f_refresh),
             (&cfg.functions.fido, f_fido_label),
+            (&cfg.functions.theme, f_theme_label),
         ];
         let ks = Style::from(cfg.colors.e_key.clone());
         let mut spans = vec![];
