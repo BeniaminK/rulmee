@@ -63,7 +63,8 @@ pub fn initialize_logging(
     log_file: Option<&str>,
     console_buffer: Option<ConsoleBuffer>,
 ) -> Result<WorkerGuard, Box<dyn std::error::Error>> {
-    tracing_log::LogTracer::init()?;
+    // Ignore error if log tracer was already initialized in process
+    let _ = tracing_log::LogTracer::init();
 
     let path = resolve_log_path(log_file);
     let file = OpenOptions::new()
@@ -91,11 +92,12 @@ pub fn initialize_logging(
             .compact()
     });
 
-    tracing_subscriber::registry()
+    let subscriber = tracing_subscriber::registry()
         .with(env_filter)
         .with(file_layer)
-        .with(console_layer)
-        .init();
+        .with(console_layer);
+
+    let _ = subscriber.try_init();
 
     Ok(guard)
 }
@@ -158,6 +160,14 @@ mod tests {
         }
         let path = resolve_log_path(None);
         assert_eq!(path, DEFAULT_LOG_FILE);
+    }
+
+    #[test]
+    fn test_double_initialize_logging_idempotent() {
+        let _guard1 = initialize_logging(Some("/tmp/lidm_test_double.log"), None);
+        assert!(_guard1.is_ok());
+        let _guard2 = initialize_logging(Some("/tmp/lidm_test_double.log"), None);
+        assert!(_guard2.is_ok());
     }
 }
 
