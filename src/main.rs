@@ -60,9 +60,13 @@ fn main() {
     let console_buffer: console::ConsoleBuffer = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::with_capacity(50)));
 
     let resolved_log_path = logging::resolve_log_path(args.log_file.as_deref());
-    if let Err(e) = logging::initialize_logging(Some(&resolved_log_path), Some(console_buffer.clone())) {
-        eprintln!("Failed to initialize logging: {}", e);
-    }
+    let _log_guard = match logging::initialize_logging(Some(&resolved_log_path), Some(console_buffer.clone())) {
+        Ok(guard) => Some(guard),
+        Err(e) => {
+            eprintln!("Failed to initialize logging: {}", e);
+            None
+        }
+    };
 
     match args.vt {
         Some(vt) => match vt::chvt(vt) {
