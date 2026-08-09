@@ -92,10 +92,26 @@ pub fn initialize_logging(
             .compact()
     });
 
+    let stdout_enabled = std::env::var("LIDM_LOG_STDOUT")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
+
+    let stdout_layer = if stdout_enabled {
+        Some(
+            fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_ansi(true)
+                .compact(),
+        )
+    } else {
+        None
+    };
+
     let subscriber = tracing_subscriber::registry()
         .with(env_filter)
         .with(file_layer)
-        .with(console_layer);
+        .with(console_layer)
+        .with(stdout_layer);
 
     let _ = subscriber.try_init();
 
@@ -168,6 +184,27 @@ mod tests {
         assert!(_guard1.is_ok());
         let _guard2 = initialize_logging(Some("/tmp/lidm_test_double.log"), None);
         assert!(_guard2.is_ok());
+    }
+
+    #[test]
+    fn test_stdout_colored_logging() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("LIDM_LOG_STDOUT", "1");
+            std::env::set_var("LIDM_LOGLEVEL", "trace");
+        }
+        let _log_guard = initialize_logging(Some("/tmp/lidm_stdout_test.log"), None).unwrap();
+
+        tracing::trace!("This is TRACE (file / stdout)");
+        tracing::debug!("This is DEBUG (file / stdout)");
+        tracing::info!("This is INFO (file / stdout)");
+        tracing::warn!("This is WARN (file / stdout)");
+        tracing::error!("This is ERROR (file / stdout)");
+
+        unsafe {
+            std::env::remove_var("LIDM_LOG_STDOUT");
+            std::env::remove_var("LIDM_LOGLEVEL");
+        }
     }
 }
 
