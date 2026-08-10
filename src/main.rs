@@ -37,17 +37,27 @@ use uzers::os::unix::UserExt;
     ),
     about = "LiDM: Lightweight Display Manager"
 )]
-struct Args {
+pub struct Args {
     #[arg(help = "VT number to switch to")]
-    vt: Option<c_int>,
-    #[arg(help = "Path to log file (overridden by LIDM_LOG env var)")]
-    log_file: Option<String>,
+    pub vt: Option<c_int>,
+
+    #[arg(long, help = "Path to log file (overridden by LIDM_LOG env var)")]
+    pub logging_file: Option<String>,
+
+    #[arg(long, help = "Logging level (trace, debug, info, warn, error)")]
+    pub logging_level: Option<String>,
+
+    #[arg(long, help = "PAM service name")]
+    pub auth_pam_service: Option<String>,
+
     #[arg(
+        short,
+        long = "config",
         env = "LIDM_CONF",
         default_value = "/etc/lidm.ini",
         help = "Path to configuration file"
     )]
-    conf_path: String,
+    pub conf_path: String,
 }
 
 fn main() {
@@ -59,7 +69,7 @@ fn main() {
 
     let console_buffer: console::ConsoleBuffer = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::with_capacity(50)));
 
-    let resolved_log_path = logging::resolve_log_path(args.log_file.as_deref());
+    let resolved_log_path = logging::resolve_log_path(args.logging_file.as_deref());
     let _log_guard = match logging::initialize_logging(Some(&resolved_log_path), Some(console_buffer.clone())) {
         Ok(guard) => Some(guard),
         Err(e) => {

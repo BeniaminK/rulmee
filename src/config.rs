@@ -170,6 +170,94 @@ impl Config {
         *self = parsed_config;
         Ok(())
     }
+
+    pub fn apply_env_overrides(&mut self) {
+        if let Ok(val) = std::env::var("LIDM_LOGGING_FILE").or_else(|_| std::env::var("LIDM_LOG")) {
+            if !val.is_empty() {
+                self.logging.file = val;
+            }
+        }
+        if let Ok(val) = std::env::var("LIDM_LOGGING_LEVEL").or_else(|_| std::env::var("LIDM_LOGLEVEL")) {
+            if !val.is_empty() {
+                self.logging.level = val;
+            }
+        }
+        if let Ok(val) = std::env::var("LIDM_AUTH_PAM_SERVICE").or_else(|_| std::env::var("LIDM_PAM_SERVICE")) {
+            if !val.is_empty() {
+                self.auth.pam_service = val;
+            }
+        }
+
+        for (key, val) in std::env::vars() {
+            if let Some(rest) = key.strip_prefix("LIDM_") {
+                if let Some((section, item)) = rest.split_once('_') {
+                    let section = section.to_lowercase();
+                    let item = item.to_lowercase();
+                    match (section.as_str(), item.as_str()) {
+                        ("behavior", "show_console") => {
+                            if let Ok(b) = val.parse::<bool>() {
+                                self.behavior.show_console = b;
+                            }
+                        }
+                        ("behavior", "refresh_rate") => {
+                            if let Ok(u) = val.parse::<u64>() {
+                                self.behavior.refresh_rate = u;
+                            }
+                        }
+                        ("behavior", "bypass_shell_login") => {
+                            if let Ok(b) = val.parse::<bool>() {
+                                self.behavior.bypass_shell_login = b;
+                            }
+                        }
+                        ("logging", "file") => {
+                            if !val.is_empty() {
+                                self.logging.file = val;
+                            }
+                        }
+                        ("logging", "level") => {
+                            if !val.is_empty() {
+                                self.logging.level = val;
+                            }
+                        }
+                        ("auth", "pam_service") => {
+                            if !val.is_empty() {
+                                self.auth.pam_service = val;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn load(args: &crate::Args) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut config = Config::default();
+
+        if Path::new(&args.conf_path).exists() {
+            config.parse(&args.conf_path)?;
+        }
+
+        config.apply_env_overrides();
+
+        if let Some(ref file) = args.logging_file {
+            if !file.is_empty() {
+                config.logging.file = file.clone();
+            }
+        }
+        if let Some(ref level) = args.logging_level {
+            if !level.is_empty() {
+                config.logging.level = level.clone();
+            }
+        }
+        if let Some(ref pam_service) = args.auth_pam_service {
+            if !pam_service.is_empty() {
+                config.auth.pam_service = pam_service.clone();
+            }
+        }
+
+        Ok(config)
+    }
 }
 
 #[cfg(test)]
@@ -247,5 +335,78 @@ f_fido = "yubikey"
         assert_eq!(config.logging.file, "/tmp/lidm.log");
         assert_eq!(config.logging.level, "debug");
         assert_eq!(config.auth.pam_service, "login");
+    }
+
+    #[test]
+    fn test_config_automatic_env_overrides() {
+        unsafe {
+            std::env::set_var("LIDM_LOGGING_LEVEL", "warn");
+            std::env::set_var("LIDM_AUTH_PAM_SERVICE", "custom-pam");
+            std::env::set_var("LIDM_BEHAVIOR_REFRESH_RATE", "250");
+        }
+
+        let mut config = Config::default();
+        config.apply_env_overrides();
+
+        assert_eq!(config.logging.level, "warn");
+        assert_eq!(config.auth.pam_service, "custom-pam");
+        assert_eq!(config.behavior.refresh_rate, 250);
+
+        unsafe {
+            std::env::remove_var("LIDM_LOGGING_LEVEL");
+            std::env::remove_var("LIDM_AUTH_PAM_SERVICE");
+            std::env::remove_var("LIDM_BEHAVIOR_REFRESH_RATE");
+        }
+    }
+
+    #[test]
+    fn test_config_load_precedence() {
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("test_lidm_precedence.toml");
+        let toml_content = r#"
+[logging]
+level = "info"
+file = "/tmp/toml.log"
+
+[auth]
+pam_service = "toml-pam"
+
+[behavior]
+refresh_rate = 150
+"#;
+        std::fs::write(&config_path, toml_content).unwrap();
+
+        unsafe {
+            std::env::set_var("LIDM_LOGGING_LEVEL", "warn");
+            std::env::set_var("LIDM_BEHAVIOR_REFRESH_RATE", "300");
+        }
+
+        let args = crate::Args {
+            vt: None,
+            logging_file: Some("/tmp/cli.log".to_string()),
+            logging_level: Some("error".to_string()),
+            auth_pam_service: None,
+            conf_path: config_path.to_str().unwrap().to_string(),
+        };
+
+        let config = Config::load(&args).unwrap();
+
+        // CLI overrides TOML
+        assert_eq!(config.logging.file, "/tmp/cli.log");
+
+        // CLI overrides Env and TOML
+        assert_eq!(config.logging.level, "error");
+
+        // TOML preserved when no Env or CLI set
+        assert_eq!(config.auth.pam_service, "toml-pam");
+
+        // Env overrides TOML
+        assert_eq!(config.behavior.refresh_rate, 300);
+
+        unsafe {
+            std::env::remove_var("LIDM_LOGGING_LEVEL");
+            std::env::remove_var("LIDM_BEHAVIOR_REFRESH_RATE");
+        }
+        let _ = std::fs::remove_file(config_path);
     }
 }
