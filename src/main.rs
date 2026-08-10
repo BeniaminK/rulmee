@@ -1,7 +1,5 @@
 mod auth;
 mod colors;
-#[macro_use]
-mod macros;
 mod config;
 mod console;
 mod exec;
@@ -41,41 +39,21 @@ use uzers::os::unix::UserExt;
 pub struct Args {
     #[arg(help = "VT number to switch to")]
     pub vt: Option<c_int>,
+    
+    #[arg(
+        short = 'c',
+        long = "config",
+        env = "LIDM_CONF",
+        default_value = "/etc/lidm/default.toml",
+        help = "Path to configuration file"
+    )]
+    pub conf_path: String,
 
     #[arg(long = "logging-file", help = "Path to log file")]
     pub logging_file: Option<String>,
 
     #[arg(long = "logging-level", help = "Log level filter")]
     pub logging_level: Option<String>,
-
-    #[arg(long = "logging-stdout", help = "Enable stdout logging")]
-    pub logging_stdout: bool,
-
-    #[arg(long = "auth-pam-service", help = "PAM service name")]
-    pub auth_pam_service: Option<String>,
-
-    #[arg(
-        short = 'c',
-        long = "config",
-        help = "Path to configuration file"
-    )]
-    pub conf_path: Option<String>,
-}
-
-impl Args {
-    pub fn conf_path(&self) -> String {
-        if let Some(ref path) = self.conf_path {
-            if !path.is_empty() {
-                return path.clone();
-            }
-        }
-        if let Ok(env_path) = std::env::var("LIDM_CONF") {
-            if !env_path.is_empty() {
-                return env_path;
-            }
-        }
-        "/etc/lidm.ini".to_string()
-    }
 }
 
 fn main() {
@@ -87,40 +65,37 @@ fn main() {
 
     let console_buffer: console::ConsoleBuffer = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::with_capacity(50)));
 
-    let initial_config = config::Config::load(&args).unwrap_or_default();
-
-    let _log_guard = match logging::initialize_logging(&initial_config.logging, Some(console_buffer.clone())) {
-        Ok(guard) => Some(guard),
-        Err(e) => {
-            eprintln!("Failed to initialize logging: {}", e);
-            None
-        }
-    };
-
-    match args.vt {
-        Some(vt) => match vt::chvt(vt) {
-            Err(e) => {
-                warn!("Warning: Could not switch to VT {}: {}", vt, e);
-            }
-            _ => (),
-        },
-        None => (),
-    }
-
     let mut pam_messages = Vec::new();
     let mut auth_failed = false;
 
     loop {
+
         // Load config
-        let conf_path = args.conf_path();
-        info!("Loading configuration from: {}", conf_path);
-        let config = match config::Config::load(&args) {
-            Ok(cfg) => cfg,
+        let conf_path = args.conf_path.clone();
+        let (config, config_err) = config::Config::load(&args);
+
+        let _log_guard = match logging::initialize_logging(&config.logging, Some(console_buffer.clone())) {
+            Ok(guard) => Some(guard),
             Err(e) => {
-                error!("Error loading config from {}: {}", conf_path, e);
-                std::process::exit(1);
+                eprintln!("Failed to initialize logging: {}", e);
+                None
             }
         };
+
+        info!("Loading configuration from: {}", conf_path);
+        if let Some(err) = config_err {
+            error!("{}", err);
+        }
+
+        match args.vt {
+            Some(vt) => match vt::chvt(vt) {
+                Err(e) => {
+                    warn!("Warning: Could not switch to VT {}: {}", vt, e);
+                }
+                _ => (),
+            },
+            None => (),
+        }
 
         debug!("Config: {:?}", config);
 
@@ -150,11 +125,6 @@ fn main() {
             }
         };
         let bypass_shell_login = config.behavior.bypass_shell_login;
-        let ui_console_buffer = if config.behavior.show_console {
-            Some(console_buffer.clone())
-        } else {
-            None
-        };
 
         let mut ui = UI::new(
             config.clone(),
@@ -162,7 +132,7 @@ fn main() {
             users.clone(),
             initial_user,
             initial_session,
-            ui_console_buffer,
+            Some(console_buffer.clone()),
             pam_messages.clone(),
             auth_failed,
         );
