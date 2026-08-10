@@ -38,20 +38,20 @@ use uzers::os::unix::UserExt;
     about = "LiDM: Lightweight Display Manager"
 )]
 pub struct Args {
-    #[arg(help = "VT number to switch to")]
+    #[arg(help = "VT number to switch to", env = "LIDM_VT")]
     pub vt: Option<c_int>,
 
-    #[arg(long, help = "Path to log file (overridden by LIDM_LOG env var)")]
+    #[arg(long = "logging-file", help = "Path to log file", env = "LIDM_LOGGING_FILE")]
     pub logging_file: Option<String>,
 
-    #[arg(long, help = "Logging level (trace, debug, info, warn, error)")]
+    #[arg(long = "logging-level", help = "Log level filter", env = "LIDM_LOGGING_LEVEL")]
     pub logging_level: Option<String>,
 
-    #[arg(long, help = "PAM service name")]
+    #[arg(long = "auth-pam-service", help = "PAM service name", env = "LIDM_AUTH_PAM_SERVICE")]
     pub auth_pam_service: Option<String>,
 
     #[arg(
-        short,
+        short = 'c',
         long = "config",
         env = "LIDM_CONF",
         default_value = "/etc/lidm.ini",
@@ -93,13 +93,14 @@ fn main() {
 
     loop {
         // Load config
-        let mut config = config::Config::default();
-        let conf_path = args.conf_path.clone();
-        info!("Loading configuration from: {}", conf_path);
-        if let Err(e) = config.parse(&conf_path) {
-            error!("Error parsing config at {}: {}", conf_path, e);
-            std::process::exit(1);
-        }
+        info!("Loading configuration from: {}", args.conf_path);
+        let config = match config::Config::load(&args) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                error!("Error loading config from {}: {}", args.conf_path, e);
+                std::process::exit(1);
+            }
+        };
 
         debug!("Config: {:?}", config);
 
@@ -188,9 +189,8 @@ fn main() {
                 });
 
                 // Perform authentication
-                let pam_service =
-                    std::env::var("LIDM_PAM_SERVICE").unwrap_or_else(|_| "login".to_string());
-                match auth::authenticate(&username, &password, &pam_service) {
+                let pam_service = &config.auth.pam_service;
+                match auth::authenticate(&username, &password, pam_service) {
                     Ok(mut auth_session) => {
                         pam_messages.clear();
                         auth_failed = false;
