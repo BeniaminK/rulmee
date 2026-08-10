@@ -39,29 +39,43 @@ use uzers::os::unix::UserExt;
     about = "LiDM: Lightweight Display Manager"
 )]
 pub struct Args {
-    #[arg(help = "VT number to switch to", env = "LIDM_VT")]
+    #[arg(help = "VT number to switch to")]
     pub vt: Option<c_int>,
 
-    #[arg(long = "logging-file", help = "Path to log file", env = "LIDM_LOGGING_FILE")]
+    #[arg(long = "logging-file", help = "Path to log file")]
     pub logging_file: Option<String>,
 
-    #[arg(long = "logging-level", help = "Log level filter", env = "LIDM_LOGGING_LEVEL")]
+    #[arg(long = "logging-level", help = "Log level filter")]
     pub logging_level: Option<String>,
 
-    #[arg(long = "logging-stdout", help = "Enable stdout logging", env = "LIDM_LOGGING_STDOUT")]
+    #[arg(long = "logging-stdout", help = "Enable stdout logging")]
     pub logging_stdout: bool,
 
-    #[arg(long = "auth-pam-service", help = "PAM service name", env = "LIDM_AUTH_PAM_SERVICE")]
+    #[arg(long = "auth-pam-service", help = "PAM service name")]
     pub auth_pam_service: Option<String>,
 
     #[arg(
         short = 'c',
         long = "config",
-        env = "LIDM_CONF",
-        default_value = "/etc/lidm.ini",
         help = "Path to configuration file"
     )]
-    pub conf_path: String,
+    pub conf_path: Option<String>,
+}
+
+impl Args {
+    pub fn conf_path(&self) -> String {
+        if let Some(ref path) = self.conf_path {
+            if !path.is_empty() {
+                return path.clone();
+            }
+        }
+        if let Ok(env_path) = std::env::var("LIDM_CONF") {
+            if !env_path.is_empty() {
+                return env_path;
+            }
+        }
+        "/etc/lidm.ini".to_string()
+    }
 }
 
 fn main() {
@@ -73,13 +87,7 @@ fn main() {
 
     let console_buffer: console::ConsoleBuffer = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::with_capacity(50)));
 
-    let initial_config = match config::Config::load(&args) {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            eprintln!("Error loading config from {}: {}", args.conf_path, e);
-            std::process::exit(1);
-        }
-    };
+    let initial_config = config::Config::load(&args).unwrap_or_default();
 
     let _log_guard = match logging::initialize_logging(&initial_config.logging, Some(console_buffer.clone())) {
         Ok(guard) => Some(guard),
@@ -104,11 +112,12 @@ fn main() {
 
     loop {
         // Load config
-        info!("Loading configuration from: {}", args.conf_path);
+        let conf_path = args.conf_path();
+        info!("Loading configuration from: {}", conf_path);
         let config = match config::Config::load(&args) {
             Ok(cfg) => cfg,
             Err(e) => {
-                error!("Error loading config from {}: {}", args.conf_path, e);
+                error!("Error loading config from {}: {}", conf_path, e);
                 std::process::exit(1);
             }
         };

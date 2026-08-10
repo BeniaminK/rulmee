@@ -295,8 +295,9 @@ impl Config {
     pub fn load(args: &crate::Args) -> Result<Self, Box<dyn std::error::Error>> {
         let mut config = Config::default();
 
-        if Path::new(&args.conf_path).exists() {
-            config.parse(&args.conf_path)?;
+        let conf_path = args.conf_path();
+        if Path::new(&conf_path).exists() {
+            config.parse(&conf_path)?;
         }
 
         config.apply_env_overrides();
@@ -460,7 +461,7 @@ refresh_rate = 150
             logging_level: Some("error".to_string()),
             logging_stdout: true,
             auth_pam_service: None,
-            conf_path: config_path.to_str().unwrap().to_string(),
+            conf_path: Some(config_path.to_str().unwrap().to_string()),
         };
 
         let config = Config::load(&args).unwrap();
