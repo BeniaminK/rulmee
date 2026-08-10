@@ -97,6 +97,7 @@ pub struct Behavior {
     pub timefmt: String,
     pub refresh_rate: u64,
     pub bypass_shell_login: bool,
+    pub show_theme: bool,
 }
 
 impl Default for Behavior {
@@ -110,6 +111,7 @@ impl Default for Behavior {
             timefmt: "%Y-%m-%d %H:%M:%S".to_string(),
             refresh_rate: 100,
             bypass_shell_login: false,
+            show_theme: false,
         }
     }
 }
@@ -159,10 +161,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn parse<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Box<dyn std::error::Error>> {
-        if !path.as_ref().exists() {
-            return Ok(());
-        }
+    fn parse<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Box<dyn std::error::Error>> {
 
         let content = std::fs::read_to_string(path)?;
         let deserializer = toml::Deserializer::parse(&content)?;
@@ -227,106 +226,70 @@ impl Config {
             return;
         }
 
-        // Deserialize a full Config from the env-only TOML (serde fills defaults
-        // for every field we didn't set).
-        let env_toml_str = match toml::to_string(&env_table) {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        let env_config: Config = match toml::from_str(&env_toml_str) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-
-        // Walk the env_table keys and copy only those fields from env_config → self.
-        Self::merge_from_table(self, &env_config, &env_table);
-    }
-
-    /// Recursively copy fields from `source` into `dest`, but only for keys
-    /// that are present in `table`. This ensures we never overwrite a field
-    /// that wasn't explicitly set via an environment variable.
-    fn merge_from_table(dest: &mut Config, source: &Config, table: &toml::Table) {
-        for (section, sec_val) in table {
-            let items = match sec_val {
-                toml::Value::Table(t) => t,
-                _ => continue,
-            };
-
-            match section.as_str() {
-                "logging" => {
-                    merge_fields!(items, dest.logging, source.logging;
-                        "file" => file, "level" => level, "stdout" => stdout);
-                }
-                "auth" => {
-                    merge_fields!(items, dest.auth, source.auth;
-                        "pam_service" => pam_service);
-                }
-                "behavior" => {
-                    merge_fields!(items, dest.behavior, source.behavior;
-                        "box_type" => box_type, "include_defshell" => include_defshell,
-                        "show_console" => show_console, "timefmt" => timefmt,
-                        "refresh_rate" => refresh_rate, "bypass_shell_login" => bypass_shell_login);
-                }
-                "strings" => {
-                    merge_fields!(items, dest.strings, source.strings;
-                        "f_poweroff" => f_poweroff, "f_reboot" => f_reboot,
-                        "f_refresh" => f_refresh, "f_fido" => f_fido,
-                        "f_theme" => f_theme, "e_user" => e_user,
-                        "e_passwd" => e_passwd, "s_wayland" => s_wayland,
-                        "s_xorg" => s_xorg, "s_shell" => s_shell,
-                        "opts_pre" => opts_pre, "opts_post" => opts_post,
-                        "ellipsis" => ellipsis);
-                }
-                "functions" => {
-                    merge_fields!(items, dest.functions, source.functions;
-                        "poweroff" => poweroff, "reboot" => reboot,
-                        "refresh" => refresh, "fido" => fido, "theme" => theme);
-                }
-                "chars" => {
-                    merge_fields!(items, dest.chars, source.chars;
-                        "hb" => hb, "vb" => vb, "ctl" => ctl,
-                        "ctr" => ctr, "cbl" => cbl, "cbr" => cbr);
-                }
-                _ => {}
+        if let Ok(mut current_val) = toml::Value::try_from(&*self) {
+            merge_toml_values(&mut current_val, toml::Value::Table(env_table));
+            if let Ok(updated) = current_val.try_into::<Config>() {
+                *self = updated;
             }
         }
     }
 
-    pub fn load(args: &crate::Args) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load(args: &crate::Args) -> (Self, Option<String>) {
         let mut config = Config::default();
+        let mut err_msg = None;
 
-        let conf_path = args.conf_path();
-        if Path::new(&conf_path).exists() {
-            config.parse(&conf_path)?;
+        let conf_path = &args.conf_path;
+        if Path::new(conf_path).exists() {
+            if let Err(e) = config.parse(conf_path) {
+                let msg = format!(
+                    "Failed to parse config from '{}': {}. Falling back to default configuration.",
+                    conf_path, e
+                );
+                eprintln!("{}", msg);
+                err_msg = Some(msg);
+                config = Config::default();
+            }
         }
 
         config.apply_env_overrides();
+        config.apply_cli_overrides(args);
 
+        (config, err_msg)
+    }
+
+    pub fn apply_cli_overrides(&mut self, args: &crate::Args) {
         if let Some(ref file) = args.logging_file {
             if !file.is_empty() {
-                config.logging.file = file.clone();
-            }
-        }
-        if let Some(ref level) = args.logging_level {
-            if !level.is_empty() {
-                config.logging.level = level.clone();
-            }
-        }
-        if args.logging_stdout {
-            config.logging.stdout = true;
-        }
-        if let Some(ref pam_service) = args.auth_pam_service {
-            if !pam_service.is_empty() {
-                config.auth.pam_service = pam_service.clone();
+                self.logging.file = file.clone();
             }
         }
 
-        Ok(config)
+        if let Some(ref level) = args.logging_level {
+            if !level.is_empty() {
+                self.logging.level = level.clone();
+            }
+        }
     }
 
     pub fn generate_default_toml() -> String {
         let config = Config::default();
         toml::to_string_pretty(&config).unwrap_or_default()
+    }
+}
+
+fn merge_toml_values(dest: &mut toml::Value, source: toml::Value) {
+    match (dest, source) {
+        (toml::Value::Table(dest_map), toml::Value::Table(source_map)) => {
+            for (key, val) in source_map {
+                merge_toml_values(
+                    dest_map
+                        .entry(key)
+                        .or_insert_with(|| toml::Value::Table(toml::Table::new())),
+                    val,
+                );
+            }
+        }
+        (dest, source) => *dest = source,
     }
 }
 
@@ -482,21 +445,17 @@ refresh_rate = 150
             vt: None,
             logging_file: Some("/tmp/cli.log".to_string()),
             logging_level: Some("error".to_string()),
-            logging_stdout: true,
-            auth_pam_service: None,
-            conf_path: Some(config_path.to_str().unwrap().to_string()),
+            conf_path: config_path.to_str().unwrap().to_string(),
         };
 
-        let config = Config::load(&args).unwrap();
+        let (config, err_opt) = Config::load(&args);
+        assert!(err_opt.is_none());
 
         // CLI overrides TOML
         assert_eq!(config.logging.file, "/tmp/cli.log");
 
         // CLI overrides Env and TOML
         assert_eq!(config.logging.level, "error");
-
-        // CLI flag set
-        assert_eq!(config.logging.stdout, true);
 
         // TOML preserved when no Env or CLI set
         assert_eq!(config.auth.pam_service, "toml-pam");
@@ -508,6 +467,26 @@ refresh_rate = 150
             std::env::remove_var("LIDM_LOGGING_LEVEL");
             std::env::remove_var("LIDM_BEHAVIOR_REFRESH_RATE");
         }
+        let _ = std::fs::remove_file(config_path);
+    }
+
+    #[test]
+    fn test_config_load_broken_toml_fallback_to_default() {
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("test_lidm_broken.toml");
+        std::fs::write(&config_path, "invalid toml [[ [ {{ content").unwrap();
+
+        let args = crate::Args {
+            vt: None,
+            logging_file: None,
+            logging_level: None,
+            conf_path: config_path.to_str().unwrap().to_string(),
+        };
+
+        let (config, err) = Config::load(&args);
+        assert!(err.is_some());
+        assert_eq!(config.logging.file, "/tmp/lidm.log");
+
         let _ = std::fs::remove_file(config_path);
     }
 
