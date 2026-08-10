@@ -34,3 +34,8 @@ serde_ignored = "0.1.14"
 signal-hook = "0.3"
 strum = "0.28.0"
 strum_macros = "0.28.0"
+
+[build-dependencies]
+vergen = { version = "9.1", features = ["build", "rustc"] }
+vergen-gitcl = "9.1"
+
