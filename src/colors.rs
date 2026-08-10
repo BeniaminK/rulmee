@@ -1,10 +1,10 @@
 use ratatui::style::{Color, Modifier, Style};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ThemeStyle {
     pub color: Option<String>,
     pub bg: Option<String>,
@@ -83,7 +83,7 @@ impl From<ThemeStyle> for Style {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Colors {
     pub bg: ThemeStyle,

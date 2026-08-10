@@ -1,8 +1,8 @@
 use crate::colors::Colors;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(default)]
 pub struct CharsConfig {
     pub hb: String,
@@ -26,7 +26,7 @@ impl Default for CharsConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct Functions {
     pub poweroff: Option<String>,
@@ -48,7 +48,7 @@ impl Default for Functions {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct Strings {
     pub f_poweroff: String,
@@ -86,7 +86,7 @@ impl Default for Strings {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct Behavior {
     pub box_type: String,
@@ -114,7 +114,7 @@ impl Default for Behavior {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(default)]
 pub struct LoggingConfig {
     pub file: String,
@@ -132,7 +132,7 @@ impl Default for LoggingConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(default)]
 pub struct AuthConfig {
     pub pam_service: String,
@@ -146,7 +146,7 @@ impl Default for AuthConfig {
     }
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub colors: Colors,
@@ -323,6 +323,11 @@ impl Config {
 
         Ok(config)
     }
+
+    pub fn generate_default_toml() -> String {
+        let config = Config::default();
+        toml::to_string_pretty(&config).unwrap_or_default()
+    }
 }
 
 #[cfg(test)]
@@ -331,6 +336,24 @@ mod tests {
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_sync_default_config_toml() {
+        let default_toml = Config::generate_default_toml();
+        let target_path = Path::new("themes/default.toml");
+        let header = "# Default Configuration for LiDM (Lightweight Display Manager)\n# All settings shown below with their default values.\n\n";
+        let full_content = format!("{}{}", header, default_toml);
+
+        let needs_write = if target_path.exists() {
+            std::fs::read_to_string(target_path).unwrap_or_default() != full_content
+        } else {
+            true
+        };
+
+        if needs_write {
+            std::fs::write(target_path, &full_content).unwrap();
+        }
+    }
 
     #[test]
     fn test_partial_toml_merges_with_defaults() {
