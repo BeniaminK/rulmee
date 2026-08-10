@@ -115,7 +115,7 @@ pub fn initialize_logging(
     });
 
     let systemd_layer = if log_cfg.stdout {
-        let systemd_fd = nix::unistd::dup(1).ok();
+        let systemd_fd = nix::unistd::dup(2).ok();
         Some(
             fmt::layer()
                 .with_writer(Arc::new(SystemdPipeWriter { fd: systemd_fd }))

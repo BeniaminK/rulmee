@@ -47,6 +47,7 @@ But [according to farouk](https://github.com/javalsai/lidm/issues/91#issuecommen
 - [Installation](#installation)
 - [Configuring](#configuring)
 - [PAM](#pam)
+- [Logging](#logging--systemd-architecture)
 - [Contributing](#contributing)
 - [License](#license)
 - [Inspiration](#inspiration)
@@ -117,6 +118,14 @@ Colors are gonna be put inside `\x1b[...m`, if you don't know what this is check
 If your distribution does not use the standard PAM service name `login` (`/etc/pam.d/login`) for its PAM services or if you want to use another PAM file, simply set the `LIDM_PAM_SERVICE` env variable to your PAM service name.
 
 When the env variable is empty it defaults to the `login` PAM service or whatever fallback your distribution packager has defined during compilation.
+
+# Logging & Systemd Architecture
+
+LiDM uses a multi-destination logging system specifically architected to prevent TUI screen corruption:
+
+- **Log File (`/tmp/lidm.log`)**: Full application logs (`info!`, `warn!`, `error!`) are written to file.
+- **In-App Console Viewer (<kbd>F4</kbd>)**: Log messages are captured into an internal ring buffer for live inspection inside the TUI by pressing <kbd>F4</kbd>.
+- **Systemd Journal Integration (`stderr` / FD 2)**: External service logging is routed strictly to `stderr` (FD 2). Because Ratatui renders the TUI interface on `stdout` (FD 1), outputting process logs to `stderr` allows `systemd-journald` to collect full service logs without corrupting or interleaving text over the TUI display.
 
 # Contributing
 
