@@ -114,6 +114,36 @@ impl Default for Behavior {
     }
 }
 
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct LoggingConfig {
+    pub file: String,
+    pub level: String,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            file: "/tmp/lidm.log".to_string(),
+            level: "debug".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct AuthConfig {
+    pub pam_service: String,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            pam_service: "login".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -122,6 +152,8 @@ pub struct Config {
     pub functions: Functions,
     pub strings: Strings,
     pub behavior: Behavior,
+    pub logging: LoggingConfig,
+    pub auth: AuthConfig,
 }
 
 impl Config {
@@ -134,7 +166,7 @@ impl Config {
         let deserializer = toml::Deserializer::parse(&content)?;
         let parsed_config: Config = serde_ignored::deserialize(deserializer, |path| {
             log::warn!("Unknown configuration field ignored: {}", path);
-        })?;
+        })?; 
         *self = parsed_config;
         Ok(())
     }
@@ -207,5 +239,13 @@ f_fido = "yubikey"
         let config = Config::default();
         assert_eq!(config.functions.theme.as_deref(), Some("F3"));
         assert_eq!(config.strings.f_theme.as_deref(), Some("theme"));
+    }
+
+    #[test]
+    fn test_logging_and_auth_config_defaults() {
+        let config = Config::default();
+        assert_eq!(config.logging.file, "/tmp/lidm.log");
+        assert_eq!(config.logging.level, "debug");
+        assert_eq!(config.auth.pam_service, "login");
     }
 }
