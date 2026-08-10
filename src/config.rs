@@ -174,69 +174,103 @@ impl Config {
     }
 
     pub fn apply_env_overrides(&mut self) {
-        if let Ok(val) = std::env::var("LIDM_LOGGING_FILE").or_else(|_| std::env::var("LIDM_LOG")) {
-            if !val.is_empty() {
-                self.logging.file = val;
-            }
+        // Handle legacy alias mappings first
+        if let Ok(val) = std::env::var("LIDM_LOG") {
+            if !val.is_empty() { self.logging.file = val; }
         }
-        if let Ok(val) = std::env::var("LIDM_LOGGING_LEVEL").or_else(|_| std::env::var("LIDM_LOGLEVEL")) {
-            if !val.is_empty() {
-                self.logging.level = val;
-            }
+        if let Ok(val) = std::env::var("LIDM_LOGLEVEL") {
+            if !val.is_empty() { self.logging.level = val; }
         }
-        if let Ok(val) = std::env::var("LIDM_LOGGING_STDOUT").or_else(|_| std::env::var("LIDM_LOG_STDOUT")) {
-            if !val.is_empty() {
-                self.logging.stdout = val == "1" || val.eq_ignore_ascii_case("true");
-            }
+        if let Ok(val) = std::env::var("LIDM_LOG_STDOUT") {
+            if !val.is_empty() { self.logging.stdout = val == "1" || val.eq_ignore_ascii_case("true"); }
         }
-        if let Ok(val) = std::env::var("LIDM_AUTH_PAM_SERVICE").or_else(|_| std::env::var("LIDM_PAM_SERVICE")) {
-            if !val.is_empty() {
-                self.auth.pam_service = val;
+        if let Ok(val) = std::env::var("LIDM_PAM_SERVICE") {
+            if !val.is_empty() { self.auth.pam_service = val; }
+        }
+
+        let mut env_table = toml::Table::new();
+
+        for (key, val) in std::env::vars() {
+            if val.is_empty() {
+                continue;
+            }
+
+            if let Some(rest) = key.strip_prefix("LIDM_") {
+                if let Some((section_str, item_str)) = rest.split_once('_') {
+                    let section = section_str.to_lowercase();
+                    let item = item_str.to_lowercase();
+
+                    if section == "conf" || section == "vt" {
+                        continue;
+                    }
+
+                    let toml_val = if val.eq_ignore_ascii_case("true") {
+                        toml::Value::Boolean(true)
+                    } else if val.eq_ignore_ascii_case("false") {
+                        toml::Value::Boolean(false)
+                    } else if let Ok(i) = val.parse::<i64>() {
+                        toml::Value::Integer(i)
+                    } else if let Ok(f) = val.parse::<f64>() {
+                        toml::Value::Float(f)
+                    } else {
+                        toml::Value::String(val)
+                    };
+
+                    let sec_entry = env_table
+                        .entry(section)
+                        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+                    if let toml::Value::Table(table) = sec_entry {
+                        table.insert(item, toml_val);
+                    }
+                }
             }
         }
 
-        for (key, val) in std::env::vars() {
-            if let Some(rest) = key.strip_prefix("LIDM_") {
-                if let Some((section, item)) = rest.split_once('_') {
-                    let section = section.to_lowercase();
-                    let item = item.to_lowercase();
-                    match (section.as_str(), item.as_str()) {
-                        ("behavior", "show_console") => {
-                            if let Ok(b) = val.parse::<bool>() {
-                                self.behavior.show_console = b;
+        if !env_table.is_empty() {
+            if let Ok(toml_str) = toml::to_string(&env_table) {
+                if let Ok(override_config) = toml::from_str::<Config>(&toml_str) {
+                    for (section, sec_val) in env_table {
+                        if let toml::Value::Table(items) = sec_val {
+                            for (item, _) in items {
+                                match (section.as_str(), item.as_str()) {
+                                    ("logging", "file") => self.logging.file = override_config.logging.file.clone(),
+                                    ("logging", "level") => self.logging.level = override_config.logging.level.clone(),
+                                    ("logging", "stdout") => self.logging.stdout = override_config.logging.stdout,
+                                    ("auth", "pam_service") => self.auth.pam_service = override_config.auth.pam_service.clone(),
+                                    ("behavior", "box_type") => self.behavior.box_type = override_config.behavior.box_type.clone(),
+                                    ("behavior", "include_defshell") => self.behavior.include_defshell = override_config.behavior.include_defshell,
+                                    ("behavior", "show_console") => self.behavior.show_console = override_config.behavior.show_console,
+                                    ("behavior", "timefmt") => self.behavior.timefmt = override_config.behavior.timefmt.clone(),
+                                    ("behavior", "refresh_rate") => self.behavior.refresh_rate = override_config.behavior.refresh_rate,
+                                    ("behavior", "bypass_shell_login") => self.behavior.bypass_shell_login = override_config.behavior.bypass_shell_login,
+                                    ("strings", "f_poweroff") => self.strings.f_poweroff = override_config.strings.f_poweroff.clone(),
+                                    ("strings", "f_reboot") => self.strings.f_reboot = override_config.strings.f_reboot.clone(),
+                                    ("strings", "f_refresh") => self.strings.f_refresh = override_config.strings.f_refresh.clone(),
+                                    ("strings", "f_fido") => self.strings.f_fido = override_config.strings.f_fido.clone(),
+                                    ("strings", "f_theme") => self.strings.f_theme = override_config.strings.f_theme.clone(),
+                                    ("strings", "e_user") => self.strings.e_user = override_config.strings.e_user.clone(),
+                                    ("strings", "e_passwd") => self.strings.e_passwd = override_config.strings.e_passwd.clone(),
+                                    ("strings", "s_wayland") => self.strings.s_wayland = override_config.strings.s_wayland.clone(),
+                                    ("strings", "s_xorg") => self.strings.s_xorg = override_config.strings.s_xorg.clone(),
+                                    ("strings", "s_shell") => self.strings.s_shell = override_config.strings.s_shell.clone(),
+                                    ("strings", "opts_pre") => self.strings.opts_pre = override_config.strings.opts_pre.clone(),
+                                    ("strings", "opts_post") => self.strings.opts_post = override_config.strings.opts_post.clone(),
+                                    ("strings", "ellipsis") => self.strings.ellipsis = override_config.strings.ellipsis.clone(),
+                                    ("functions", "poweroff") => self.functions.poweroff = override_config.functions.poweroff.clone(),
+                                    ("functions", "reboot") => self.functions.reboot = override_config.functions.reboot.clone(),
+                                    ("functions", "refresh") => self.functions.refresh = override_config.functions.refresh.clone(),
+                                    ("functions", "fido") => self.functions.fido = override_config.functions.fido.clone(),
+                                    ("functions", "theme") => self.functions.theme = override_config.functions.theme.clone(),
+                                    ("chars", "hb") => self.chars.hb = override_config.chars.hb.clone(),
+                                    ("chars", "vb") => self.chars.vb = override_config.chars.vb.clone(),
+                                    ("chars", "ctl") => self.chars.ctl = override_config.chars.ctl.clone(),
+                                    ("chars", "ctr") => self.chars.ctr = override_config.chars.ctr.clone(),
+                                    ("chars", "cbl") => self.chars.cbl = override_config.chars.cbl.clone(),
+                                    ("chars", "cbr") => self.chars.cbr = override_config.chars.cbr.clone(),
+                                    _ => {}
+                                }
                             }
                         }
-                        ("behavior", "refresh_rate") => {
-                            if let Ok(u) = val.parse::<u64>() {
-                                self.behavior.refresh_rate = u;
-                            }
-                        }
-                        ("behavior", "bypass_shell_login") => {
-                            if let Ok(b) = val.parse::<bool>() {
-                                self.behavior.bypass_shell_login = b;
-                            }
-                        }
-                        ("logging", "file") => {
-                            if !val.is_empty() {
-                                self.logging.file = val;
-                            }
-                        }
-                        ("logging", "level") => {
-                            if !val.is_empty() {
-                                self.logging.level = val;
-                            }
-                        }
-                        ("logging", "stdout") => {
-                            if !val.is_empty() {
-                                self.logging.stdout = val == "1" || val.eq_ignore_ascii_case("true");
-                            }
-                        }
-                        ("auth", "pam_service") => {
-                            if !val.is_empty() {
-                                self.auth.pam_service = val;
-                            }
-                        }
-                        _ => {}
                     }
                 }
             }
@@ -436,5 +470,25 @@ refresh_rate = 150
             std::env::remove_var("LIDM_BEHAVIOR_REFRESH_RATE");
         }
         let _ = std::fs::remove_file(config_path);
+    }
+
+    #[test]
+    fn test_config_arbitrary_env_override_strings() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("LIDM_STRINGS_F_POWEROFF", "dsds");
+            std::env::set_var("LIDM_CHARS_HB", "==");
+        }
+
+        let mut config = Config::default();
+        config.apply_env_overrides();
+
+        assert_eq!(config.strings.f_poweroff, "dsds");
+        assert_eq!(config.chars.hb, "==");
+
+        unsafe {
+            std::env::remove_var("LIDM_STRINGS_F_POWEROFF");
+            std::env::remove_var("LIDM_CHARS_HB");
+        }
     }
 }
