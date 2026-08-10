@@ -85,9 +85,7 @@ pub fn initialize_logging(
             .compact()
     });
 
-    let stdout_enabled = std::env::var("LIDM_LOG_STDOUT")
-        .map(|v| v == "1" || v == "true")
-        .unwrap_or(false);
+    let stdout_enabled = log_cfg.stdout;
 
     let stdout_layer = if stdout_enabled {
         Some(
@@ -115,8 +113,6 @@ pub fn initialize_logging(
 mod tests {
     use super::*;
     use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_console_buffer_writer_ring_buffer() {
@@ -158,6 +154,7 @@ mod tests {
         let cfg = LoggingConfig {
             file: "/tmp/lidm_test_double.log".to_string(),
             level: "debug".to_string(),
+            stdout: false,
         };
         let _guard1 = initialize_logging(&cfg, None);
         assert!(_guard1.is_ok());
@@ -167,13 +164,10 @@ mod tests {
 
     #[test]
     fn test_stdout_colored_logging() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe {
-            std::env::set_var("LIDM_LOG_STDOUT", "1");
-        }
         let cfg = LoggingConfig {
             file: "/tmp/lidm_stdout_test.log".to_string(),
             level: "trace".to_string(),
+            stdout: true,
         };
         let _log_guard = initialize_logging(&cfg, None).unwrap();
 
@@ -182,10 +176,6 @@ mod tests {
         tracing::info!("This is INFO (file / stdout)");
         tracing::warn!("This is WARN (file / stdout)");
         tracing::error!("This is ERROR (file / stdout)");
-
-        unsafe {
-            std::env::remove_var("LIDM_LOG_STDOUT");
-        }
     }
 }
 

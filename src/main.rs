@@ -47,6 +47,9 @@ pub struct Args {
     #[arg(long = "logging-level", help = "Log level filter", env = "LIDM_LOGGING_LEVEL")]
     pub logging_level: Option<String>,
 
+    #[arg(long = "logging-stdout", help = "Enable stdout logging", env = "LIDM_LOGGING_STDOUT")]
+    pub logging_stdout: bool,
+
     #[arg(long = "auth-pam-service", help = "PAM service name", env = "LIDM_AUTH_PAM_SERVICE")]
     pub auth_pam_service: Option<String>,
 

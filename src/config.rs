@@ -119,6 +119,7 @@ impl Default for Behavior {
 pub struct LoggingConfig {
     pub file: String,
     pub level: String,
+    pub stdout: bool,
 }
 
 impl Default for LoggingConfig {
@@ -126,6 +127,7 @@ impl Default for LoggingConfig {
         Self {
             file: "/tmp/lidm.log".to_string(),
             level: "debug".to_string(),
+            stdout: false,
         }
     }
 }
@@ -182,6 +184,11 @@ impl Config {
                 self.logging.level = val;
             }
         }
+        if let Ok(val) = std::env::var("LIDM_LOGGING_STDOUT").or_else(|_| std::env::var("LIDM_LOG_STDOUT")) {
+            if !val.is_empty() {
+                self.logging.stdout = val == "1" || val.eq_ignore_ascii_case("true");
+            }
+        }
         if let Ok(val) = std::env::var("LIDM_AUTH_PAM_SERVICE").or_else(|_| std::env::var("LIDM_PAM_SERVICE")) {
             if !val.is_empty() {
                 self.auth.pam_service = val;
@@ -219,6 +226,11 @@ impl Config {
                                 self.logging.level = val;
                             }
                         }
+                        ("logging", "stdout") => {
+                            if !val.is_empty() {
+                                self.logging.stdout = val == "1" || val.eq_ignore_ascii_case("true");
+                            }
+                        }
                         ("auth", "pam_service") => {
                             if !val.is_empty() {
                                 self.auth.pam_service = val;
@@ -249,6 +261,9 @@ impl Config {
             if !level.is_empty() {
                 config.logging.level = level.clone();
             }
+        }
+        if args.logging_stdout {
+            config.logging.stdout = true;
         }
         if let Some(ref pam_service) = args.auth_pam_service {
             if !pam_service.is_empty() {
@@ -337,6 +352,7 @@ f_fido = "yubikey"
         let config = Config::default();
         assert_eq!(config.logging.file, "/tmp/lidm.log");
         assert_eq!(config.logging.level, "debug");
+        assert_eq!(config.logging.stdout, false);
         assert_eq!(config.auth.pam_service, "login");
     }
 
@@ -345,6 +361,7 @@ f_fido = "yubikey"
         let _guard = ENV_LOCK.lock().unwrap();
         unsafe {
             std::env::set_var("LIDM_LOGGING_LEVEL", "warn");
+            std::env::set_var("LIDM_LOGGING_STDOUT", "true");
             std::env::set_var("LIDM_AUTH_PAM_SERVICE", "custom-pam");
             std::env::set_var("LIDM_BEHAVIOR_REFRESH_RATE", "250");
         }
@@ -353,11 +370,13 @@ f_fido = "yubikey"
         config.apply_env_overrides();
 
         assert_eq!(config.logging.level, "warn");
+        assert_eq!(config.logging.stdout, true);
         assert_eq!(config.auth.pam_service, "custom-pam");
         assert_eq!(config.behavior.refresh_rate, 250);
 
         unsafe {
             std::env::remove_var("LIDM_LOGGING_LEVEL");
+            std::env::remove_var("LIDM_LOGGING_STDOUT");
             std::env::remove_var("LIDM_AUTH_PAM_SERVICE");
             std::env::remove_var("LIDM_BEHAVIOR_REFRESH_RATE");
         }
@@ -390,6 +409,7 @@ refresh_rate = 150
             vt: None,
             logging_file: Some("/tmp/cli.log".to_string()),
             logging_level: Some("error".to_string()),
+            logging_stdout: true,
             auth_pam_service: None,
             conf_path: config_path.to_str().unwrap().to_string(),
         };
@@ -401,6 +421,9 @@ refresh_rate = 150
 
         // CLI overrides Env and TOML
         assert_eq!(config.logging.level, "error");
+
+        // CLI flag set
+        assert_eq!(config.logging.stdout, true);
 
         // TOML preserved when no Env or CLI set
         assert_eq!(config.auth.pam_service, "toml-pam");
