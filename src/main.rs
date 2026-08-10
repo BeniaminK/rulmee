@@ -69,8 +69,15 @@ fn main() {
 
     let console_buffer: console::ConsoleBuffer = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::with_capacity(50)));
 
-    let resolved_log_path = logging::resolve_log_path(args.logging_file.as_deref());
-    let _log_guard = match logging::initialize_logging(Some(&resolved_log_path), Some(console_buffer.clone())) {
+    let initial_config = match config::Config::load(&args) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Error loading config from {}: {}", args.conf_path, e);
+            std::process::exit(1);
+        }
+    };
+
+    let _log_guard = match logging::initialize_logging(&initial_config.logging, Some(console_buffer.clone())) {
         Ok(guard) => Some(guard),
         Err(e) => {
             eprintln!("Failed to initialize logging: {}", e);
@@ -189,8 +196,7 @@ fn main() {
                 });
 
                 // Perform authentication
-                let pam_service = &config.auth.pam_service;
-                match auth::authenticate(&username, &password, pam_service) {
+                match auth::authenticate(&username, &password, &config.auth.pam_service) {
                     Ok(mut auth_session) => {
                         pam_messages.clear();
                         auth_failed = false;

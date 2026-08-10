@@ -3,12 +3,12 @@ use std::io::{self, Write};
 use std::sync::Arc;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
-    filter::LevelFilter,
     fmt,
     layer::SubscriberExt,
     util::SubscriberInitExt,
     EnvFilter,
 };
+use crate::config::LoggingConfig;
 use crate::console::ConsoleBuffer;
 
 const DEFAULT_LOG_FILE: &str = "/tmp/lidm.log";
@@ -46,11 +46,6 @@ impl Write for &ConsoleBufferWriter {
 }
 
 pub fn resolve_log_path(cli_log_file: Option<&str>) -> String {
-    if let Ok(env_path) = std::env::var("LIDM_LOG") {
-        if !env_path.trim().is_empty() {
-            return env_path;
-        }
-    }
     if let Some(cli_path) = cli_log_file {
         if !cli_path.trim().is_empty() {
             return cli_path.to_string();
@@ -60,13 +55,13 @@ pub fn resolve_log_path(cli_log_file: Option<&str>) -> String {
 }
 
 pub fn initialize_logging(
-    log_file: Option<&str>,
+    log_cfg: &LoggingConfig,
     console_buffer: Option<ConsoleBuffer>,
 ) -> Result<WorkerGuard, Box<dyn std::error::Error>> {
     // Ignore error if log tracer was already initialized in process
     let _ = tracing_log::LogTracer::init();
 
-    let path = resolve_log_path(log_file);
+    let path = resolve_log_path(Some(&log_cfg.file));
     let file = OpenOptions::new()
         .create(true)
         .append(true)
@@ -74,10 +69,8 @@ pub fn initialize_logging(
 
     let (non_blocking_file, guard) = tracing_appender::non_blocking(file);
 
-    let log_level = std::env::var("LIDM_LOGLEVEL").unwrap_or_else(|_| "debug".to_string());
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::DEBUG.into())
-        .parse_lossy(&log_level);
+    let env_filter = EnvFilter::try_new(&log_cfg.level)
+        .unwrap_or_else(|_| EnvFilter::new("debug"));
 
     let file_layer = fmt::layer()
         .with_writer(non_blocking_file)
@@ -146,43 +139,29 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_log_path_env_var_precedence() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe {
-            std::env::set_var("LIDM_LOG", "/tmp/lidm_env_test.log");
-        }
-        let path = resolve_log_path(Some("/tmp/lidm_cli_test.log"));
-        assert_eq!(path, "/tmp/lidm_env_test.log");
-        unsafe {
-            std::env::remove_var("LIDM_LOG");
-        }
-    }
-
-    #[test]
-    fn test_resolve_log_path_cli_arg_fallback() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe {
-            std::env::remove_var("LIDM_LOG");
-        }
+    fn test_resolve_log_path_cli_arg() {
         let path = resolve_log_path(Some("/tmp/lidm_cli_test.log"));
         assert_eq!(path, "/tmp/lidm_cli_test.log");
     }
 
     #[test]
     fn test_resolve_log_path_default_fallback() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe {
-            std::env::remove_var("LIDM_LOG");
-        }
         let path = resolve_log_path(None);
         assert_eq!(path, DEFAULT_LOG_FILE);
+
+        let path_empty = resolve_log_path(Some("  "));
+        assert_eq!(path_empty, DEFAULT_LOG_FILE);
     }
 
     #[test]
     fn test_double_initialize_logging_idempotent() {
-        let _guard1 = initialize_logging(Some("/tmp/lidm_test_double.log"), None);
+        let cfg = LoggingConfig {
+            file: "/tmp/lidm_test_double.log".to_string(),
+            level: "debug".to_string(),
+        };
+        let _guard1 = initialize_logging(&cfg, None);
         assert!(_guard1.is_ok());
-        let _guard2 = initialize_logging(Some("/tmp/lidm_test_double.log"), None);
+        let _guard2 = initialize_logging(&cfg, None);
         assert!(_guard2.is_ok());
     }
 
@@ -191,9 +170,12 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap();
         unsafe {
             std::env::set_var("LIDM_LOG_STDOUT", "1");
-            std::env::set_var("LIDM_LOGLEVEL", "trace");
         }
-        let _log_guard = initialize_logging(Some("/tmp/lidm_stdout_test.log"), None).unwrap();
+        let cfg = LoggingConfig {
+            file: "/tmp/lidm_stdout_test.log".to_string(),
+            level: "trace".to_string(),
+        };
+        let _log_guard = initialize_logging(&cfg, None).unwrap();
 
         tracing::trace!("This is TRACE (file / stdout)");
         tracing::debug!("This is DEBUG (file / stdout)");
@@ -203,7 +185,6 @@ mod tests {
 
         unsafe {
             std::env::remove_var("LIDM_LOG_STDOUT");
-            std::env::remove_var("LIDM_LOGLEVEL");
         }
     }
 }

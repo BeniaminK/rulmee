@@ -263,6 +263,9 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_partial_toml_merges_with_defaults() {
@@ -339,6 +342,7 @@ f_fido = "yubikey"
 
     #[test]
     fn test_config_automatic_env_overrides() {
+        let _guard = ENV_LOCK.lock().unwrap();
         unsafe {
             std::env::set_var("LIDM_LOGGING_LEVEL", "warn");
             std::env::set_var("LIDM_AUTH_PAM_SERVICE", "custom-pam");
@@ -361,6 +365,7 @@ f_fido = "yubikey"
 
     #[test]
     fn test_config_load_precedence() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir();
         let config_path = temp_dir.join("test_lidm_precedence.toml");
         let toml_content = r#"
