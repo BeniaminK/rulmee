@@ -45,6 +45,35 @@ impl Write for &ConsoleBufferWriter {
     }
 }
 
+struct SystemdPipeWriter {
+    fd: Option<std::os::unix::io::RawFd>,
+}
+
+impl Write for SystemdPipeWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        (&*self).write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        (&*self).flush()
+    }
+}
+
+impl Write for &SystemdPipeWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if let Some(fd) = self.fd {
+            unsafe {
+                libc::write(fd, buf.as_ptr() as *const _, buf.len());
+            }
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 pub fn resolve_log_path(cli_log_file: Option<&str>) -> String {
     if let Some(cli_path) = cli_log_file {
         if !cli_path.trim().is_empty() {
@@ -85,13 +114,12 @@ pub fn initialize_logging(
             .compact()
     });
 
-    let stdout_enabled = log_cfg.stdout;
-
-    let stdout_layer = if stdout_enabled {
+    let systemd_layer = if log_cfg.stdout {
+        let systemd_fd = nix::unistd::dup(1).ok();
         Some(
             fmt::layer()
-                .with_writer(std::io::stdout)
-                .with_ansi(true)
+                .with_writer(Arc::new(SystemdPipeWriter { fd: systemd_fd }))
+                .with_ansi(false)
                 .compact(),
         )
     } else {
@@ -102,7 +130,7 @@ pub fn initialize_logging(
         .with(env_filter)
         .with(file_layer)
         .with(console_layer)
-        .with(stdout_layer);
+        .with(systemd_layer);
 
     let _ = subscriber.try_init();
 
