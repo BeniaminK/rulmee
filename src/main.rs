@@ -29,11 +29,11 @@ use uzers::os::unix::UserExt;
     version = concat!(
         env!("CARGO_PKG_VERSION"),
         " (git ",
-        env!("LIDM_GIT_REV"),
+        env!("VERGEN_GIT_DESCRIBE"),
         ", build date ",
-        env!("LIDM_BUILD_TS"),
+        env!("VERGEN_BUILD_TIMESTAMP"),
         ", compiler ",
-        env!("LIDM_COMPILER_VER"),
+        env!("VERGEN_RUSTC_SEMVER"),
         ")"
     ),
     about = "LiDM: Lightweight Display Manager"
