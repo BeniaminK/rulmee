@@ -173,21 +173,13 @@ impl Config {
         Ok(())
     }
 
+    /// Scan environment variables matching `LIDM_<SECTION>_<KEY>` and apply them
+    /// as overrides onto the current configuration. The naming convention is
+    /// automatic: `LIDM_STRINGS_F_POWEROFF=dsds` maps to `[strings] f_poweroff`.
+    ///
+    /// Values are auto-typed: `true`/`false` → bool, valid integers → integer,
+    /// everything else → string.
     pub fn apply_env_overrides(&mut self) {
-        // Handle legacy alias mappings first
-        if let Ok(val) = std::env::var("LIDM_LOG") {
-            if !val.is_empty() { self.logging.file = val; }
-        }
-        if let Ok(val) = std::env::var("LIDM_LOGLEVEL") {
-            if !val.is_empty() { self.logging.level = val; }
-        }
-        if let Ok(val) = std::env::var("LIDM_LOG_STDOUT") {
-            if !val.is_empty() { self.logging.stdout = val == "1" || val.eq_ignore_ascii_case("true"); }
-        }
-        if let Ok(val) = std::env::var("LIDM_PAM_SERVICE") {
-            if !val.is_empty() { self.auth.pam_service = val; }
-        }
-
         let mut env_table = toml::Table::new();
 
         for (key, val) in std::env::vars() {
@@ -195,84 +187,107 @@ impl Config {
                 continue;
             }
 
-            if let Some(rest) = key.strip_prefix("LIDM_") {
-                if let Some((section_str, item_str)) = rest.split_once('_') {
-                    let section = section_str.to_lowercase();
-                    let item = item_str.to_lowercase();
+            let rest = match key.strip_prefix("LIDM_") {
+                Some(r) => r,
+                None => continue,
+            };
 
-                    if section == "conf" || section == "vt" {
-                        continue;
-                    }
+            let (section_str, item_str) = match rest.split_once('_') {
+                Some(pair) => pair,
+                None => continue,
+            };
 
-                    let toml_val = if val.eq_ignore_ascii_case("true") {
-                        toml::Value::Boolean(true)
-                    } else if val.eq_ignore_ascii_case("false") {
-                        toml::Value::Boolean(false)
-                    } else if let Ok(i) = val.parse::<i64>() {
-                        toml::Value::Integer(i)
-                    } else if let Ok(f) = val.parse::<f64>() {
-                        toml::Value::Float(f)
-                    } else {
-                        toml::Value::String(val)
-                    };
+            let section = section_str.to_lowercase();
+            let item = item_str.to_lowercase();
 
-                    let sec_entry = env_table
-                        .entry(section)
-                        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-                    if let toml::Value::Table(table) = sec_entry {
-                        table.insert(item, toml_val);
-                    }
-                }
+            // Skip CLAP-owned top-level args (handled by clap, not config sections)
+            if section == "conf" || section == "vt" {
+                continue;
+            }
+
+            let toml_val = if val.eq_ignore_ascii_case("true") {
+                toml::Value::Boolean(true)
+            } else if val.eq_ignore_ascii_case("false") {
+                toml::Value::Boolean(false)
+            } else if let Ok(i) = val.parse::<i64>() {
+                toml::Value::Integer(i)
+            } else {
+                toml::Value::String(val)
+            };
+
+            let sec_entry = env_table
+                .entry(section)
+                .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+            if let toml::Value::Table(table) = sec_entry {
+                table.insert(item, toml_val);
             }
         }
 
-        if !env_table.is_empty() {
-            if let Ok(toml_str) = toml::to_string(&env_table) {
-                if let Ok(override_config) = toml::from_str::<Config>(&toml_str) {
-                    for (section, sec_val) in env_table {
-                        if let toml::Value::Table(items) = sec_val {
-                            for (item, _) in items {
-                                match (section.as_str(), item.as_str()) {
-                                    ("logging", "file") => self.logging.file = override_config.logging.file.clone(),
-                                    ("logging", "level") => self.logging.level = override_config.logging.level.clone(),
-                                    ("logging", "stdout") => self.logging.stdout = override_config.logging.stdout,
-                                    ("auth", "pam_service") => self.auth.pam_service = override_config.auth.pam_service.clone(),
-                                    ("behavior", "box_type") => self.behavior.box_type = override_config.behavior.box_type.clone(),
-                                    ("behavior", "include_defshell") => self.behavior.include_defshell = override_config.behavior.include_defshell,
-                                    ("behavior", "show_console") => self.behavior.show_console = override_config.behavior.show_console,
-                                    ("behavior", "timefmt") => self.behavior.timefmt = override_config.behavior.timefmt.clone(),
-                                    ("behavior", "refresh_rate") => self.behavior.refresh_rate = override_config.behavior.refresh_rate,
-                                    ("behavior", "bypass_shell_login") => self.behavior.bypass_shell_login = override_config.behavior.bypass_shell_login,
-                                    ("strings", "f_poweroff") => self.strings.f_poweroff = override_config.strings.f_poweroff.clone(),
-                                    ("strings", "f_reboot") => self.strings.f_reboot = override_config.strings.f_reboot.clone(),
-                                    ("strings", "f_refresh") => self.strings.f_refresh = override_config.strings.f_refresh.clone(),
-                                    ("strings", "f_fido") => self.strings.f_fido = override_config.strings.f_fido.clone(),
-                                    ("strings", "f_theme") => self.strings.f_theme = override_config.strings.f_theme.clone(),
-                                    ("strings", "e_user") => self.strings.e_user = override_config.strings.e_user.clone(),
-                                    ("strings", "e_passwd") => self.strings.e_passwd = override_config.strings.e_passwd.clone(),
-                                    ("strings", "s_wayland") => self.strings.s_wayland = override_config.strings.s_wayland.clone(),
-                                    ("strings", "s_xorg") => self.strings.s_xorg = override_config.strings.s_xorg.clone(),
-                                    ("strings", "s_shell") => self.strings.s_shell = override_config.strings.s_shell.clone(),
-                                    ("strings", "opts_pre") => self.strings.opts_pre = override_config.strings.opts_pre.clone(),
-                                    ("strings", "opts_post") => self.strings.opts_post = override_config.strings.opts_post.clone(),
-                                    ("strings", "ellipsis") => self.strings.ellipsis = override_config.strings.ellipsis.clone(),
-                                    ("functions", "poweroff") => self.functions.poweroff = override_config.functions.poweroff.clone(),
-                                    ("functions", "reboot") => self.functions.reboot = override_config.functions.reboot.clone(),
-                                    ("functions", "refresh") => self.functions.refresh = override_config.functions.refresh.clone(),
-                                    ("functions", "fido") => self.functions.fido = override_config.functions.fido.clone(),
-                                    ("functions", "theme") => self.functions.theme = override_config.functions.theme.clone(),
-                                    ("chars", "hb") => self.chars.hb = override_config.chars.hb.clone(),
-                                    ("chars", "vb") => self.chars.vb = override_config.chars.vb.clone(),
-                                    ("chars", "ctl") => self.chars.ctl = override_config.chars.ctl.clone(),
-                                    ("chars", "ctr") => self.chars.ctr = override_config.chars.ctr.clone(),
-                                    ("chars", "cbl") => self.chars.cbl = override_config.chars.cbl.clone(),
-                                    ("chars", "cbr") => self.chars.cbr = override_config.chars.cbr.clone(),
-                                    _ => {}
-                                }
-                            }
-                        }
-                    }
+        if env_table.is_empty() {
+            return;
+        }
+
+        // Deserialize a full Config from the env-only TOML (serde fills defaults
+        // for every field we didn't set).
+        let env_toml_str = match toml::to_string(&env_table) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let env_config: Config = match toml::from_str(&env_toml_str) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        // Walk the env_table keys and copy only those fields from env_config → self.
+        Self::merge_from_table(self, &env_config, &env_table);
+    }
+
+    /// Recursively copy fields from `source` into `dest`, but only for keys
+    /// that are present in `table`. This ensures we never overwrite a field
+    /// that wasn't explicitly set via an environment variable.
+    fn merge_from_table(dest: &mut Config, source: &Config, table: &toml::Table) {
+        for (section, sec_val) in table {
+            let items = match sec_val {
+                toml::Value::Table(t) => t,
+                _ => continue,
+            };
+
+            match section.as_str() {
+                "logging" => {
+                    merge_fields!(items, dest.logging, source.logging;
+                        "file" => file, "level" => level, "stdout" => stdout);
                 }
+                "auth" => {
+                    merge_fields!(items, dest.auth, source.auth;
+                        "pam_service" => pam_service);
+                }
+                "behavior" => {
+                    merge_fields!(items, dest.behavior, source.behavior;
+                        "box_type" => box_type, "include_defshell" => include_defshell,
+                        "show_console" => show_console, "timefmt" => timefmt,
+                        "refresh_rate" => refresh_rate, "bypass_shell_login" => bypass_shell_login);
+                }
+                "strings" => {
+                    merge_fields!(items, dest.strings, source.strings;
+                        "f_poweroff" => f_poweroff, "f_reboot" => f_reboot,
+                        "f_refresh" => f_refresh, "f_fido" => f_fido,
+                        "f_theme" => f_theme, "e_user" => e_user,
+                        "e_passwd" => e_passwd, "s_wayland" => s_wayland,
+                        "s_xorg" => s_xorg, "s_shell" => s_shell,
+                        "opts_pre" => opts_pre, "opts_post" => opts_post,
+                        "ellipsis" => ellipsis);
+                }
+                "functions" => {
+                    merge_fields!(items, dest.functions, source.functions;
+                        "poweroff" => poweroff, "reboot" => reboot,
+                        "refresh" => refresh, "fido" => fido, "theme" => theme);
+                }
+                "chars" => {
+                    merge_fields!(items, dest.chars, source.chars;
+                        "hb" => hb, "vb" => vb, "ctl" => ctl,
+                        "ctr" => ctr, "cbl" => cbl, "cbr" => cbr);
+                }
+                _ => {}
             }
         }
     }

@@ -1,10 +1,11 @@
 mod auth;
 mod colors;
+#[macro_use]
+mod macros;
 mod config;
 mod console;
 mod exec;
 mod logging;
-mod macros;
 mod session;
 mod sys;
 mod theme;
