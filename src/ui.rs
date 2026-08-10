@@ -322,10 +322,18 @@ impl Widget for &UI {
             let lines: Vec<Line> = console_lines[skip..]
                 .iter()
                 .map(|l| {
-                    Line::from(Span::styled(
-                        l.clone(),
-                        Style::default().add_modifier(Modifier::DIM),
-                    ))
+                    let style = if l.contains("ERROR") {
+                        Style::default().fg(ratatui::style::Color::Red).add_modifier(Modifier::BOLD)
+                    } else if l.contains("WARN") {
+                        Style::default().fg(ratatui::style::Color::Yellow)
+                    } else if l.contains("INFO") {
+                        Style::default().fg(ratatui::style::Color::Green)
+                    } else if l.contains("DEBUG") {
+                        Style::default().fg(ratatui::style::Color::Blue)
+                    } else {
+                        Style::default().add_modifier(Modifier::DIM)
+                    };
+                    Line::from(Span::styled(l.clone(), style))
                 })
                 .collect();
 
