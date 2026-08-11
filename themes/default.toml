@@ -67,13 +67,11 @@ modifiers = []
 [functions]
 poweroff = "F1"
 reboot = "F2"
-refresh = "F5"
 theme = "F3"
 
 [strings]
 f_poweroff = "poweroff"
 f_reboot = "reboot"
-f_refresh = "refresh"
 f_fido = "fido"
 f_theme = "theme"
 e_user = "user"

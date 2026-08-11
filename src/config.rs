@@ -18,7 +18,6 @@ pub enum BoxType {
 pub struct Functions {
     pub poweroff: Option<String>,
     pub reboot: Option<String>,
-    pub refresh: Option<String>,
     pub fido: Option<String>,
     pub theme: Option<String>,
 }
@@ -28,7 +27,6 @@ impl Default for Functions {
         Self {
             poweroff: Some("F1".to_string()),
             reboot: Some("F2".to_string()),
-            refresh: Some("F5".to_string()),
             fido: None,
             theme: Some("F3".to_string()),
         }
@@ -40,7 +38,6 @@ impl Default for Functions {
 pub struct Strings {
     pub f_poweroff: String,
     pub f_reboot: String,
-    pub f_refresh: String,
     pub f_fido: Option<String>,
     pub f_theme: Option<String>,
     pub e_user: String,
@@ -58,7 +55,6 @@ impl Default for Strings {
         Self {
             f_poweroff: "poweroff".to_string(),
             f_reboot: "reboot".to_string(),
-            f_refresh: "refresh".to_string(),
             f_fido: Some("fido".to_string()),
             f_theme: Some("theme".to_string()),
             e_user: "user".to_string(),
