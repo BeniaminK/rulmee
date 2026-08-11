@@ -288,89 +288,23 @@ fn main() {
             auth_failed,
         );
 
-        let ui_result = ui.run();
-
-        let login_data = match &ui_result {
-            Ok(UIResult::Login(s, u, p, cs, cu)) => Some((*s, *u, p.clone(), cs.clone(), cu.clone())),
-            _ => None,
-        };
-
-        if let Some((session_idx, user_idx, password, custom_session, custom_user)) = login_data {
-            let (username, shell) = if user_idx < users.len() && custom_user.is_empty() {
-                    (
-                        users[user_idx].username.clone(),
-                        users[user_idx].shell.clone(),
-                    )
-                } else {
-                    (custom_user, "/bin/bash".to_string())
-                };
-
-                let (session_name, exec_args, is_xorg, desktop_names) =
-                    if session_idx < sessions.len() && custom_session.is_empty() {
-                        let s = &sessions[session_idx];
-                        let args = match &s.exec {
-                            session::ExecType::Shell(sh) => vec![sh.clone()],
-                            session::ExecType::Desktop(args) => args.clone(),
-                        };
-                        (
-                            s.name.clone(),
-                            args,
-                            s.session_type == SessionType::Xorg,
-                            s.desktop_names.clone(),
-                        )
-                    } else if session_idx == sessions.len() && custom_session.is_empty() {
-                        (shell.clone(), vec![shell.clone()], false, None)
-                    } else {
-                        (custom_session.clone(), vec![custom_session], false, None)
-                    };
-
-                let _ = launch_state::write_launch_state(&launch_state::LaunchState {
-                    username: username.clone(),
-                    session_opt: session_name.clone(),
-                });
-
-                // Perform authentication
-                match auth::authenticate(&username, &password, &config.auth.pam_service) {
-                    Ok(mut auth_session) => {
+        match ui.run() {
+            Ok(UIResult::Login(session_idx, user_idx, password, custom_session, custom_user)) => {
+                match handle_login(
+                    user_idx,
+                    session_idx,
+                    password,
+                    custom_session,
+                    custom_user,
+                    &config,
+                    &sessions,
+                    &users,
+                    args.vt,
+                    bypass_shell_login,
+                ) {
+                    Ok(()) => {
                         pam_messages.clear();
                         auth_failed = false;
-                        if let Some(u) = uzers::get_user_by_name(&username) {
-                            let home_dir = u.home_dir().to_string_lossy().into_owned();
-                            let uid = u.uid();
-                            let gid = u.primary_group_id();
-                            let session_type_str = if is_xorg { "x11" } else { "wayland" };
-
-                            let env = exec::assemble_environment(
-                                &auth_session.env,
-                                &username,
-                                &home_dir,
-                                &shell,
-                                session_type_str,
-                                None,
-                                desktop_names.as_deref(),
-                                &config.behavior.source,
-                                &config.behavior.user_source,
-                            );
-
-                            if let Err(e) = exec::launch_session(
-                                &username,
-                                uid,
-                                gid,
-                                &env,
-                                &exec_args,
-                                is_xorg,
-                                args.vt,
-                                &shell,
-                                bypass_shell_login,
-                            ) {
-                                eprintln!("Failed to launch session: {}", e);
-                            }
-
-                            // Teardown PAM session cleanly after session process completes
-                            auth_session.close();
-                        } else {
-                            eprintln!("User not found in system: {}", username);
-                        }
                     }
                     Err(auth_err) => {
                         eprintln!("Auth failed: {}", auth_err);
@@ -384,29 +318,14 @@ fn main() {
                         }
                     }
                 }
-        } else {
-            match ui_result {
-                Ok(UIResult::Poweroff) => {
-                    unsafe {
-                        libc::reboot(libc::RB_POWER_OFF);
-                    }
-                    std::process::exit(0);
-                }
-                Ok(UIResult::Reboot) => {
-                    unsafe {
-                        libc::reboot(libc::RB_AUTOBOOT);
-                    }
-                    std::process::exit(0);
-                }
-                Ok(UIResult::Refresh) => {
-                    continue; // Reload everything
-                }
-                Ok(UIResult::Exit) => break,
-                Err(e) => {
-                    eprintln!("UI Error: {}", e);
-                    break;
-                }
-                _ => {}
+            }
+            Ok(UIResult::Poweroff) => sys::poweroff(),
+            Ok(UIResult::Reboot) => sys::reboot(),
+            Ok(UIResult::Refresh) => continue,
+            Ok(UIResult::Exit) => break,
+            Err(e) => {
+                eprintln!("UI Error: {}", e);
+                break;
             }
         }
     }
