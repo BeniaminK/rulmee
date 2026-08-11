@@ -275,7 +275,45 @@ impl Config {
         let config = Config::default();
         toml::to_string_pretty(&config).unwrap_or_default()
     }
+
+    pub fn resolve_default_copy_path(dest: Option<&str>) -> std::path::PathBuf {
+        if let Some(d) = dest {
+            let trimmed = d.trim();
+            if !trimmed.is_empty() {
+                return std::path::PathBuf::from(trimmed);
+            }
+        }
+
+        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+            if !xdg.trim().is_empty() {
+                return std::path::PathBuf::from(xdg).join("lidm").join("default.toml");
+            }
+        }
+
+        if let Ok(home) = std::env::var("HOME") {
+            if !home.trim().is_empty() {
+                return std::path::PathBuf::from(home).join(".config").join("lidm").join("default.toml");
+            }
+        }
+
+        std::path::PathBuf::from("/etc/lidm/default.toml")
+    }
+
+    pub fn execute_copy_config(dest: Option<&str>) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+        let path = Self::resolve_default_copy_path(dest);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let default_toml = Self::generate_default_toml();
+        let header = "# Default Configuration for LiDM (Lightweight Display Manager)\n# All settings shown below with their default values.\n\n";
+        let full_content = format!("{}{}", header, default_toml);
+
+        std::fs::write(&path, full_content)?;
+        Ok(path)
+    }
 }
+
 
 fn merge_toml_values(dest: &mut toml::Value, source: toml::Value) {
     match (dest, source) {
@@ -509,4 +547,31 @@ refresh_rate = 150
             std::env::remove_var("LIDM_CHARS_HB");
         }
     }
+
+    #[test]
+    fn test_resolve_default_copy_path_custom() {
+        let custom = "/tmp/custom_lidm_config.toml";
+        let path = Config::resolve_default_copy_path(Some(custom));
+        assert_eq!(path, std::path::PathBuf::from(custom));
+    }
+
+    #[test]
+    fn test_execute_copy_config_creates_file() {
+        let temp_dir = std::env::temp_dir();
+        let target = temp_dir.join("lidm_test_copy_config/sub/default.toml");
+        if target.exists() {
+            let _ = std::fs::remove_file(&target);
+        }
+
+        let result = Config::execute_copy_config(target.to_str());
+        assert!(result.is_ok());
+
+        assert!(target.exists());
+        let content = std::fs::read_to_string(&target).unwrap();
+        assert!(content.contains("# Default Configuration for LiDM"));
+        assert!(content.contains("[logging]"));
+
+        let _ = std::fs::remove_dir_all(temp_dir.join("lidm_test_copy_config"));
+    }
 }
+
