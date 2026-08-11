@@ -2,28 +2,15 @@ use crate::colors::Colors;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
-#[serde(default)]
-pub struct CharsConfig {
-    pub hb: String,
-    pub vb: String,
-    pub ctl: String,
-    pub ctr: String,
-    pub cbl: String,
-    pub cbr: String,
-}
-
-impl Default for CharsConfig {
-    fn default() -> Self {
-        Self {
-            hb: "─".to_string(),
-            vb: "│".to_string(),
-            ctl: "┌".to_string(),
-            ctr: "┐".to_string(),
-            cbl: "└".to_string(),
-            cbr: "┘".to_string(),
-        }
-    }
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BoxType {
+    #[default]
+    #[serde(alias = "plain", alias = "default")]
+    Border,
+    None,
+    Rounded,
+    Block,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -89,7 +76,7 @@ impl Default for Strings {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct Behavior {
-    pub box_type: String,
+    pub box_type: BoxType,
     pub include_defshell: bool,
     pub show_console: bool,
     pub source: Vec<String>,
@@ -103,7 +90,7 @@ pub struct Behavior {
 impl Default for Behavior {
     fn default() -> Self {
         Self {
-            box_type: "border".to_string(),
+            box_type: BoxType::Border,
             include_defshell: true,
             show_console: false,
             source: Vec::new(),
@@ -152,7 +139,6 @@ impl Default for AuthConfig {
 #[serde(default)]
 pub struct Config {
     pub colors: Colors,
-    pub chars: CharsConfig,
     pub functions: Functions,
     pub strings: Strings,
     pub behavior: Behavior,
@@ -362,19 +348,14 @@ mod tests {
 [colors]
 fg = { color = "#FFFFFF" }
 
-[chars]
-hb = "="
+[behavior]
+box_type = "rounded"
 "##;
         let config: Config = toml::from_str(toml_str).expect("Failed to parse TOML");
 
         // Explicitly defined fields in TOML
         assert_eq!(config.colors.fg.color.as_deref(), Some("#FFFFFF"));
-        assert_eq!(config.chars.hb, "=");
-        assert_eq!(config.chars.vb, "│");
-        assert_eq!(config.chars.ctl, "┌");
-        assert_eq!(config.chars.ctr, "┐");
-        assert_eq!(config.chars.cbl, "└");
-        assert_eq!(config.chars.cbr, "┘");
+        assert_eq!(config.behavior.box_type, BoxType::Rounded);
 
         // Missing fields should perfectly retain their rich defaults from Config::default()
         let default_config = Config::default();
@@ -535,19 +516,43 @@ refresh_rate = 150
         let _guard = ENV_LOCK.lock().unwrap();
         unsafe {
             std::env::set_var("LIDM_STRINGS_F_POWEROFF", "dsds");
-            std::env::set_var("LIDM_CHARS_HB", "==");
         }
 
         let mut config = Config::default();
         config.apply_env_overrides();
 
         assert_eq!(config.strings.f_poweroff, "dsds");
-        assert_eq!(config.chars.hb, "==");
 
         unsafe {
             std::env::remove_var("LIDM_STRINGS_F_POWEROFF");
-            std::env::remove_var("LIDM_CHARS_HB");
         }
+    }
+
+    #[test]
+    fn test_box_type_deserialization() {
+        let toml_plain: Config = toml::from_str(r#"[behavior]
+box_type = "plain""#).unwrap();
+        assert_eq!(toml_plain.behavior.box_type, BoxType::Border);
+
+        let toml_default: Config = toml::from_str(r#"[behavior]
+box_type = "default""#).unwrap();
+        assert_eq!(toml_default.behavior.box_type, BoxType::Border);
+
+        let toml_border: Config = toml::from_str(r#"[behavior]
+box_type = "border""#).unwrap();
+        assert_eq!(toml_border.behavior.box_type, BoxType::Border);
+
+        let toml_none: Config = toml::from_str(r#"[behavior]
+box_type = "none""#).unwrap();
+        assert_eq!(toml_none.behavior.box_type, BoxType::None);
+
+        let toml_rounded: Config = toml::from_str(r#"[behavior]
+box_type = "rounded""#).unwrap();
+        assert_eq!(toml_rounded.behavior.box_type, BoxType::Rounded);
+
+        let toml_block: Config = toml::from_str(r#"[behavior]
+box_type = "block""#).unwrap();
+        assert_eq!(toml_block.behavior.box_type, BoxType::Block);
     }
 
     #[test]
