@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{BoxType, Config};
 use crate::console::ConsoleBuffer;
 use crate::session::Session;
 use crate::ui_adapter::{HotkeyAction, UIAdapter};
@@ -234,29 +234,16 @@ impl Widget for &UI {
 
         let (bx, chunks, console_area) = UI::layout(area, show_console, show_messages);
 
-        let custom_border_set = ratatui::symbols::border::Set {
-            top_left: &cfg.chars.ctl,
-            top_right: &cfg.chars.ctr,
-            bottom_left: &cfg.chars.cbl,
-            bottom_right: &cfg.chars.cbr,
-            vertical_left: &cfg.chars.vb,
-            vertical_right: &cfg.chars.vb,
-            horizontal_top: &cfg.chars.hb,
-            horizontal_bottom: &cfg.chars.hb,
-        };
-
         // Box border
-        let border = match cfg.behavior.box_type.as_str() {
-            "none" => Block::default().borders(Borders::NONE),
-            "block" => Block::default()
+        let border = match cfg.behavior.box_type {
+            BoxType::None => Block::default().borders(Borders::NONE),
+            BoxType::Block => Block::default()
                 .borders(Borders::ALL)
                 .border_set(ratatui_core::symbols::border::FULL),
-            "rounded" => Block::default()
+            BoxType::Rounded => Block::default()
                 .borders(Borders::ALL)
                 .border_type(ratatui::widgets::BorderType::Rounded),
-            _ => Block::default()
-                .borders(Borders::ALL)
-                .border_set(custom_border_set),
+            BoxType::Border => Block::default().borders(Borders::ALL),
         }
         .style(Style::from(cfg.colors.e_box.clone()));
         border.render(bx, buf);
@@ -347,7 +334,7 @@ impl Widget for &UI {
                 .render(console_rect, buf);
         }
 
-        // Footer
+        // Shortcuts / Hotkeys top right
         let f_fido_default = "fido".to_string();
         let f_fido_label = cfg.strings.f_fido.as_ref().unwrap_or(&f_fido_default);
         let f_theme_default = "theme".to_string();
@@ -370,9 +357,28 @@ impl Widget for &UI {
                 spans.push(Span::styled(h, ks));
             }
         }
+
+        let [top_row, _, bottom_row] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+        ])
+        .areas(area);
+
         Paragraph::new(Line::from(spans))
             .alignment(ratatui::layout::Alignment::Right)
-            .render(area, buf);
+            .render(top_row, buf);
+
+        if cfg.behavior.show_theme {
+            let theme_path = self.adapter.current_theme_path();
+            let truncated_theme = truncate_str(theme_path, bottom_row.width as usize, &cfg.strings.ellipsis);
+            Paragraph::new(Span::styled(
+                truncated_theme,
+                Style::from(cfg.colors.e_date.clone()),
+            ))
+            .alignment(ratatui::layout::Alignment::Right)
+            .render(bottom_row, buf);
+        }
     }
 }
 
@@ -449,31 +455,84 @@ mod tests {
 
     #[test]
     fn test_custom_border_rendering() {
-        let mut config = Config::default();
-        config.chars.hb = "=".to_string();
-        config.chars.vb = "#".to_string();
-        config.chars.ctl = "+".to_string();
-        config.chars.ctr = "+".to_string();
-        config.chars.cbl = "+".to_string();
-        config.chars.cbr = "+".to_string();
-
-        let ui = UI::new(config, vec![], vec![], None, None, None, vec![], false);
         let area = Rect::new(0, 0, 60, 15);
+
+        for (box_type, expected_char) in [
+            (BoxType::Border, "┌"),
+            (BoxType::Rounded, "╭"),
+            (BoxType::Block, "█"),
+        ] {
+            let mut config = Config::default();
+            config.behavior.box_type = box_type;
+            let ui = UI::new(config, vec![], vec![], None, None, None, vec![], false);
+            let mut buf = Buffer::empty(area);
+            Widget::render(&ui, area, &mut buf);
+
+            let (bx, _, _) = UI::layout(area, false, false);
+            let top_left = buf.cell((bx.x, bx.y)).unwrap();
+            assert_eq!(
+                top_left.symbol(),
+                expected_char,
+                "Expected top-left character for {:?}",
+                box_type
+            );
+        }
+
+        // Test BoxType::None
+        let mut config = Config::default();
+        config.behavior.box_type = BoxType::None;
+        let ui = UI::new(config, vec![], vec![], None, None, None, vec![], false);
+        let mut buf = Buffer::empty(area);
+        Widget::render(&ui, area, &mut buf);
+        let (bx, _, _) = UI::layout(area, false, false);
+        let top_left = buf.cell((bx.x, bx.y)).unwrap();
+        assert_ne!(top_left.symbol(), "┌");
+        assert_ne!(top_left.symbol(), "╭");
+        assert_ne!(top_left.symbol(), "█");
+    }
+
+    #[test]
+    fn test_show_theme_rendering() {
+        let mut config = Config::default();
+        config.behavior.show_theme = true;
+
+        let mut ui = UI::new(config.clone(), vec![], vec![], None, None, None, vec![], false);
+        ui.adapter.state.themes = vec![crate::theme::Theme {
+            name: "test_theme".to_string(),
+            path: "/etc/lidm/themes/test_theme.toml".to_string(),
+            config,
+        }];
+        ui.adapter.cycle_theme();
+        let expected_path = ui.adapter.current_theme_path().to_string();
+
+        let area = Rect::new(0, 0, 100, 20);
         let mut buf = Buffer::empty(area);
 
         Widget::render(&ui, area, &mut buf);
 
-        let mut found_custom_corner = false;
-        for y in 0..area.height {
-            for x in 0..area.width {
-                if let Some(cell) = buf.cell((x, y)) {
-                    if cell.symbol() == "+" {
-                        found_custom_corner = true;
-                        break;
-                    }
-                }
+        // Top row (line 0) should render hotkeys
+        let mut top_text = String::new();
+        for x in 0..area.width {
+            if let Some(cell) = buf.cell((x, 0)) {
+                top_text.push_str(cell.symbol());
             }
         }
-        assert!(found_custom_corner, "Custom border corner character '+' should be rendered in UI buffer");
+        assert!(
+            top_text.contains("poweroff") && top_text.contains("F1"),
+            "Top row should display hotkey shortcuts"
+        );
+
+        // Bottom row (line height-1) should render theme path
+        let bottom_y = area.height - 1;
+        let mut bottom_text = String::new();
+        for x in 0..area.width {
+            if let Some(cell) = buf.cell((x, bottom_y)) {
+                bottom_text.push_str(cell.symbol());
+            }
+        }
+        assert!(
+            bottom_text.contains(&expected_path),
+            "Bottom row should display active theme path when show_theme is true"
+        );
     }
 }

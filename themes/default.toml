@@ -64,14 +64,6 @@ modifiers = [
 color = "#ffae42"
 modifiers = []
 
-[chars]
-hb = "─"
-vb = "│"
-ctl = "┌"
-ctr = "┐"
-cbl = "└"
-cbr = "┘"
-
 [functions]
 poweroff = "F1"
 reboot = "F2"
@@ -102,6 +94,7 @@ user_source = []
 timefmt = "%Y-%m-%d %H:%M:%S"
 refresh_rate = 100
 bypass_shell_login = false
+show_theme = false
 
 [logging]
 file = "/tmp/lidm.log"
