@@ -321,7 +321,6 @@ fn main() {
             }
             Ok(UIResult::Poweroff) => sys::poweroff(),
             Ok(UIResult::Reboot) => sys::reboot(),
-            Ok(UIResult::Refresh) => continue,
             Ok(UIResult::Exit) => break,
             Err(e) => {
                 eprintln!("UI Error: {}", e);

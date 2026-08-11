@@ -12,7 +12,6 @@ use tui_input::backend::crossterm::EventHandler;
 pub enum HotkeyAction {
     Poweroff,
     Reboot,
-    Refresh,
     Fido,
     Theme,
 }
@@ -21,7 +20,7 @@ pub struct UIAdapter {
     pub(crate) config: Config,
     sessions: Vec<Session>,
     users: Vec<LocalUser>,
-    state: UIState,
+    pub(crate) state: UIState,
     console_buffer: Option<ConsoleBuffer>,
 }
 
@@ -62,7 +61,7 @@ impl UIAdapter {
             None => (0, false, Input::default()),
         };
 
-        let themes = crate::theme::discover_themes(&config.colors);
+        let themes = crate::theme::discover_themes();
 
         Self {
             config,
@@ -80,7 +79,7 @@ impl UIAdapter {
                 auth_error,
                 pam_messages,
                 themes,
-                current_theme_idx: 0,
+                current_theme_idx: None,
             },
             console_buffer,
         }
@@ -204,9 +203,6 @@ impl UIAdapter {
         if is(&self.config.functions.reboot) {
             return Some(HotkeyAction::Reboot);
         }
-        if is(&self.config.functions.refresh) {
-            return Some(HotkeyAction::Refresh);
-        }
         if is(&self.config.functions.fido) {
             return Some(HotkeyAction::Fido);
         }
@@ -227,21 +223,29 @@ impl UIAdapter {
             log::debug!("cycle_theme: no themes available, skipping");
             return;
         }
-        let old_idx = self.state.current_theme_idx;
-        let old_name = self.state.themes[old_idx].name.clone();
-        self.state.current_theme_idx =
-            (self.state.current_theme_idx + 1) % self.state.themes.len();
-        let new_idx = self.state.current_theme_idx;
-        let new_name = &self.state.themes[new_idx].name;
+        let next_idx = match self.state.current_theme_idx {
+            None => 0,
+            Some(idx) => (idx + 1) % self.state.themes.len(),
+        };
+        self.state.current_theme_idx = Some(next_idx);
+        let new_theme = &self.state.themes[next_idx];
         log::info!(
-            "cycle_theme: switching from '{}' (idx {}) to '{}' (idx {}) [{} themes total]",
-            old_name,
-            old_idx,
-            new_name,
-            new_idx,
+            "cycle_theme: switching to theme '{}' ({}) [{}/{} themes total]",
+            new_theme.name,
+            new_theme.path,
+            next_idx + 1,
             self.state.themes.len()
         );
-        self.config.colors = self.state.themes[new_idx].colors.clone();
+        let mut new_config = new_theme.config.clone();
+        new_config.apply_env_overrides();
+        self.config = new_config;
+    }
+
+    pub fn current_theme_path(&self) -> &str {
+        match self.state.current_theme_idx {
+            Some(idx) => &self.state.themes[idx].path,
+            None => "",
+        }
     }
 
     // --- Result extraction ---
@@ -491,13 +495,45 @@ mod tests {
             Some(HotkeyAction::Theme)
         );
 
-        // Themes should contain at least the default theme
-        assert!(!adapter.state.themes.is_empty());
-        assert_eq!(adapter.state.current_theme_idx, 0);
+        assert_eq!(adapter.state.current_theme_idx, None);
 
-        // Cycling with a single theme should wrap back to 0
-        let initial_len = adapter.state.themes.len();
+        if !adapter.state.themes.is_empty() {
+            adapter.cycle_theme();
+            assert_eq!(adapter.state.current_theme_idx, Some(0));
+            assert!(!adapter.current_theme_path().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_dynamic_config_reload_toggles_show_console() {
+        let mut config_no_console = Config::default();
+        config_no_console.behavior.show_console = false;
+
+        let mut config_with_console = Config::default();
+        config_with_console.behavior.show_console = true;
+
+        let console_buffer = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+
+        let mut adapter = UIAdapter::new(
+            config_no_console,
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            Some(console_buffer),
+            Vec::new(),
+            false,
+        );
+
+        assert!(!adapter.show_console());
+
+        adapter.state.themes = vec![crate::theme::Theme {
+            name: "console_theme".to_string(),
+            path: "console_theme.toml".to_string(),
+            config: config_with_console,
+        }];
+
         adapter.cycle_theme();
-        assert_eq!(adapter.state.current_theme_idx, 1 % initial_len);
+        assert!(adapter.show_console());
     }
 }

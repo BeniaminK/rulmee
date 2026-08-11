@@ -294,9 +294,6 @@ int load(struct Vector* users, struct Vector* sessions) {
         enum Keys ansi_key = ansi_code.key;
         if (ansi_key == ESC) {
           esc = 2;
-        } else if (ansi_key == g_config->functions.refresh) {
-          restore_all();
-          return 0;
         } else if (ansi_key == g_config->functions.reboot) {
           restore_all();
           reboot(RB_AUTOBOOT);
@@ -544,11 +541,9 @@ static void print_footer() {
   size_t bsize = utf8len(g_config->strings.f_poweroff) +
                  utf8len(KEY_NAMES[g_config->functions.poweroff]) +
                  utf8len(g_config->strings.f_reboot) +
-                 utf8len(KEY_NAMES[g_config->functions.reboot]) +
-                 utf8len(g_config->strings.f_refresh) +
-                 utf8len(KEY_NAMES[g_config->functions.refresh]);
+                 utf8len(KEY_NAMES[g_config->functions.reboot]);
 
-  bsize += (2 * 2) + (3 * 1);
+  bsize += (2 * 1) + (3 * 1);
 
   if (fido_enabled) {
     bsize += utf8len(g_config->strings.f_fido) +
@@ -558,21 +553,17 @@ static void print_footer() {
   uint row = window.ws_row - 1;
   uint col = window.ws_col - 2 - bsize;
 
-  printf("\x1b[%d;%dH%s \x1b[%sm%s\x1b[%sm  %s \x1b[%sm%s\x1b[%sm  ", row, col,
+  printf("\x1b[%d;%dH%s \x1b[%sm%s\x1b[%sm  %s \x1b[%sm%s\x1b[%sm", row, col,
          g_config->strings.f_poweroff, g_config->colors.e_key,
          KEY_NAMES[g_config->functions.poweroff], g_config->colors.fg,
          g_config->strings.f_reboot, g_config->colors.e_key,
          KEY_NAMES[g_config->functions.reboot], g_config->colors.fg);
 
   if (fido_enabled) {
-    printf("%s \x1b[%sm%s\x1b[%sm  ", g_config->strings.f_fido,
+    printf("  %s \x1b[%sm%s\x1b[%sm", g_config->strings.f_fido,
            g_config->colors.e_key, KEY_NAMES[g_config->functions.fido],
            g_config->colors.fg);
   }
-
-  printf("%s \x1b[%sm%s\x1b[%sm", g_config->strings.f_refresh,
-         g_config->colors.e_key, KEY_NAMES[g_config->functions.refresh],
-         g_config->colors.fg);
 }
 
 void print_err(const char* msg) {

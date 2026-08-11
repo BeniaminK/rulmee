@@ -22,7 +22,6 @@ pub enum UIResult {
     Login(usize, usize, String, String, String),
     Poweroff,
     Reboot,
-    Refresh,
     Exit,
 }
 
@@ -90,7 +89,6 @@ impl UI {
             return match action {
                 HotkeyAction::Poweroff => Some(UIResult::Poweroff),
                 HotkeyAction::Reboot => Some(UIResult::Reboot),
-                HotkeyAction::Refresh => Some(UIResult::Refresh),
                 HotkeyAction::Fido => {
                     let (s, u, p, cs, cu) = self.adapter.fido_login_data();
                     Some(UIResult::Login(s, u, p, cs, cu))
@@ -342,7 +340,6 @@ impl Widget for &UI {
         let hotkeys = [
             (&cfg.functions.poweroff, &cfg.strings.f_poweroff),
             (&cfg.functions.reboot, &cfg.strings.f_reboot),
-            (&cfg.functions.refresh, &cfg.strings.f_refresh),
             (&cfg.functions.fido, f_fido_label),
             (&cfg.functions.theme, f_theme_label),
         ];
