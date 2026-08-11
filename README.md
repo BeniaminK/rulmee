@@ -42,6 +42,7 @@ But [according to farouk](https://github.com/javalsai/lidm/issues/91#issuecommen
 - [Ideology](#ideology)
 - [Usage](#usage)
   - [Arguments](#arguments)
+  - [Commands](#commands)
   - [Program](#program)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -66,6 +67,18 @@ We all know that the most important thing in a project is the ideology of the au
 ### Arguments
 
 If a single argument is provided (don't even do `--` or standard unix parsing...), it switches to said tty number at startup. Used (at least) by most service files.
+
+### Commands
+
+- `lidm copy-config [DEST]`: Copy the default configuration to your user config directory (`~/.config/lidm/default.toml`) or a specified destination path.
+
+```bash
+# Copy to default user config location (~/.config/lidm/default.toml)
+lidm copy-config
+
+# Copy to custom path
+lidm copy-config /etc/lidm/default.toml
+```
 
 ### Program
 
