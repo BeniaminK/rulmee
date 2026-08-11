@@ -480,6 +480,7 @@ refresh_rate = 150
         }
 
         let args = crate::Args {
+            command: None,
             vt: None,
             logging_file: Some("/tmp/cli.log".to_string()),
             logging_level: Some("error".to_string()),
@@ -515,6 +516,7 @@ refresh_rate = 150
         std::fs::write(&config_path, "invalid toml [[ [ {{ content").unwrap();
 
         let args = crate::Args {
+            command: None,
             vt: None,
             logging_file: None,
             logging_level: None,

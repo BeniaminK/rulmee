@@ -17,10 +17,19 @@ mod signal_handler;
 
 use crate::session::SessionType;
 use crate::ui::{UI, UIResult};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 use std::ffi::c_int;
 use uzers::os::unix::UserExt;
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    #[command(about = "Copy default configuration to local or specified config file")]
+    CopyConfig {
+        #[arg(help = "Destination path for the configuration file [default: ~/.config/lidm/default.toml]")]
+        dest: Option<String>,
+    },
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -37,6 +46,9 @@ use uzers::os::unix::UserExt;
     about = "LiDM: Lightweight Display Manager"
 )]
 pub struct Args {
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+
     #[arg(help = "VT number to switch to")]
     pub vt: Option<c_int>,
     
@@ -58,6 +70,19 @@ pub struct Args {
 
 fn main() {
     let args = Args::parse();
+
+    if let Some(Commands::CopyConfig { ref dest }) = args.command {
+        match config::Config::execute_copy_config(dest.as_deref()) {
+            Ok(path) => {
+                println!("Default configuration successfully copied to '{}'.", path.display());
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("Error copying default configuration: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
 
     if let Err(e) = signal_handler::setup_signal_handler() {
         eprintln!("Warning: Failed to setup signal handler: {}", e);
