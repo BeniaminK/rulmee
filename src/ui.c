@@ -543,7 +543,7 @@ static void print_footer() {
                  utf8len(g_config->strings.f_reboot) +
                  utf8len(KEY_NAMES[g_config->functions.reboot]);
 
-  bsize += (2 * 1) + (3 * 1);
+  bsize += (1 * 2) + (2 * 1);
 
   if (fido_enabled) {
     bsize += utf8len(g_config->strings.f_fido) +

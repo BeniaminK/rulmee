@@ -496,8 +496,7 @@ mod tests {
         let mut ui = UI::new(config.clone(), vec![], vec![], None, None, None, vec![], false);
         ui.adapter.state.themes = vec![crate::theme::Theme {
             name: "test_theme".to_string(),
-            path: "/etc/lidm/themes/test_theme.toml".to_string(),
-            config,
+            colors: config.colors,
         }];
         ui.adapter.cycle_theme();
         let expected_path = ui.adapter.current_theme_path().to_string();
