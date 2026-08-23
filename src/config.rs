@@ -162,6 +162,19 @@ impl Config {
         Self::from_toml_str(&content)
     }
 
+    pub fn apply_table_overrides(&mut self, overrides: toml::Table) {
+        if overrides.is_empty() {
+            return;
+        }
+
+        if let Ok(mut current_val) = toml::Value::try_from(&*self) {
+            merge_toml_values(&mut current_val, toml::Value::Table(overrides));
+            if let Ok(updated) = current_val.try_into::<Config>() {
+                *self = updated;
+            }
+        }
+    }
+
     /// Scan environment variables matching `LIDM_<SECTION>_<KEY>` and apply them
     /// as overrides onto the current configuration. The naming convention is
     /// automatic: `LIDM_STRINGS_F_POWEROFF=dsds` maps to `[strings] f_poweroff`.
@@ -212,16 +225,88 @@ impl Config {
             }
         }
 
-        if env_table.is_empty() {
-            return;
+        self.apply_table_overrides(env_table);
+    }
+
+    /// Extract configuration overrides matching `--<section>_<key>` or `--<section>-<key>`
+    /// from an argument list, returning the parsed TOML table and the remaining arguments.
+    pub fn extract_cli_overrides<I, T>(args: I) -> (toml::Table, Vec<String>)
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        let known_sections = ["colors", "functions", "strings", "behavior", "logging", "auth"];
+        let mut cli_table = toml::Table::new();
+        let mut remaining = Vec::new();
+
+        let raw_list: Vec<String> = args.into_iter().map(|s| s.as_ref().to_string()).collect();
+        let mut i = 0;
+        while i < raw_list.len() {
+            let arg = &raw_list[i];
+
+            if !arg.starts_with("--") || arg == "--" {
+                remaining.push(arg.clone());
+                i += 1;
+                continue;
+            }
+
+            let flag_body = &arg[2..]; // strip "--"
+            let (full_key, inline_val) = match flag_body.split_once('=') {
+                Some((k, v)) => (k, Some(v.to_string())),
+                None => (flag_body, None),
+            };
+
+            let (section_candidate, item_candidate) =
+                if let Some(pos) = full_key.find(|c| c == '_' || c == '-') {
+                    (&full_key[..pos], &full_key[pos + 1..])
+                } else {
+                    ("", "")
+                };
+
+            let section = section_candidate.to_lowercase();
+            let item = item_candidate.to_lowercase().replace('-', "_");
+
+            if known_sections.contains(&section.as_str()) && !item.is_empty() {
+                let val_str = if let Some(v) = inline_val {
+                    v
+                } else if i + 1 < raw_list.len() && !raw_list[i + 1].starts_with('-') {
+                    i += 1;
+                    raw_list[i].clone()
+                } else {
+                    "true".to_string()
+                };
+
+                let toml_val = if val_str.eq_ignore_ascii_case("true") {
+                    toml::Value::Boolean(true)
+                } else if val_str.eq_ignore_ascii_case("false") {
+                    toml::Value::Boolean(false)
+                } else if let Ok(n) = val_str.parse::<i64>() {
+                    toml::Value::Integer(n)
+                } else if val_str.contains(',') && !val_str.starts_with('"') {
+                    toml::Value::Array(
+                        val_str
+                            .split(',')
+                            .map(|s| toml::Value::String(s.trim().to_string()))
+                            .collect(),
+                    )
+                } else {
+                    toml::Value::String(val_str)
+                };
+
+                let sec_entry = cli_table
+                    .entry(section)
+                    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+                if let toml::Value::Table(table) = sec_entry {
+                    table.insert(item, toml_val);
+                }
+            } else {
+                remaining.push(arg.clone());
+            }
+
+            i += 1;
         }
 
-        if let Ok(mut current_val) = toml::Value::try_from(&*self) {
-            merge_toml_values(&mut current_val, toml::Value::Table(env_table));
-            if let Ok(updated) = current_val.try_into::<Config>() {
-                *self = updated;
-            }
-        }
+        (cli_table, remaining)
     }
 
     pub fn load(args: &crate::Args) -> (Self, Option<String>) {
@@ -601,5 +686,74 @@ pam_service = "gdm"
         assert_eq!(cfg.behavior.refresh_rate, 300);
         assert_eq!(cfg.auth.pam_service, "gdm");
     }
+
+    #[test]
+    fn test_extract_cli_overrides_basic() {
+        let raw_args = vec![
+            "lidm".to_string(),
+            "-c".to_string(),
+            "/etc/lidm/default.toml".to_string(),
+            "--behavior-box-type".to_string(),
+            "rounded".to_string(),
+            "--behavior_refresh_rate=250".to_string(),
+            "--behavior-show-console".to_string(),
+            "--auth-pam-service".to_string(),
+            "custom-pam".to_string(),
+            "2".to_string(),
+        ];
+
+        let (overrides, remaining) = Config::extract_cli_overrides(raw_args);
+
+        assert_eq!(remaining, vec!["lidm", "-c", "/etc/lidm/default.toml", "2"]);
+
+        let behavior = overrides.get("behavior").unwrap().as_table().unwrap();
+        assert_eq!(behavior.get("box_type").unwrap().as_str().unwrap(), "rounded");
+        assert_eq!(behavior.get("refresh_rate").unwrap().as_integer().unwrap(), 250);
+        assert_eq!(behavior.get("show_console").unwrap().as_bool().unwrap(), true);
+
+        let auth = overrides.get("auth").unwrap().as_table().unwrap();
+        assert_eq!(auth.get("pam_service").unwrap().as_str().unwrap(), "custom-pam");
+    }
+
+    #[test]
+    fn test_extract_cli_overrides_arrays_and_booleans() {
+        let raw_args = vec![
+            "lidm".to_string(),
+            "--behavior-source=/etc/profile,/etc/environment".to_string(),
+            "--behavior-include-defshell".to_string(),
+            "false".to_string(),
+            "--logging-stdout".to_string(),
+            "true".to_string(),
+        ];
+
+        let (overrides, remaining) = Config::extract_cli_overrides(raw_args);
+        assert_eq!(remaining, vec!["lidm"]);
+
+        let behavior = overrides.get("behavior").unwrap().as_table().unwrap();
+        let sources = behavior.get("source").unwrap().as_array().unwrap();
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].as_str().unwrap(), "/etc/profile");
+        assert_eq!(sources[1].as_str().unwrap(), "/etc/environment");
+        assert_eq!(behavior.get("include_defshell").unwrap().as_bool().unwrap(), false);
+
+        let logging = overrides.get("logging").unwrap().as_table().unwrap();
+        assert_eq!(logging.get("stdout").unwrap().as_bool().unwrap(), true);
+    }
+
+    #[test]
+    fn test_apply_table_overrides() {
+        let mut config = Config::default();
+        let mut table = toml::Table::new();
+        let mut behavior = toml::Table::new();
+        behavior.insert("refresh_rate".to_string(), toml::Value::Integer(999));
+        behavior.insert("box_type".to_string(), toml::Value::String("block".to_string()));
+        table.insert("behavior".to_string(), toml::Value::Table(behavior));
+
+        config.apply_table_overrides(table);
+        assert_eq!(config.behavior.refresh_rate, 999);
+        assert_eq!(config.behavior.box_type, BoxType::Block);
+    }
 }
+
+
 
