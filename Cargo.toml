@@ -1,6 +1,6 @@
 [package]
 name = "lidm"
-version = "1.0.0"
+version = "0.9.0"
 edition = "2024"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations

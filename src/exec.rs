@@ -25,6 +25,71 @@ pub fn drop_privileges(user: &str, uid: u32, gid: u32) -> Result<(), String> {
     Ok(())
 }
 
+pub fn parse_env_file<P: AsRef<std::path::Path>>(path: P) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return pairs;
+    };
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let line = if line.starts_with("export")
+            && (line.chars().nth(6) == Some(' ') || line.chars().nth(6) == Some('\t'))
+        {
+            line[6..].trim_start()
+        } else {
+            line
+        };
+
+        if let Some((key, val)) = line.split_once('=') {
+            let key = key.trim();
+            let mut val = val.trim();
+
+            if key.is_empty() {
+                continue;
+            }
+
+            if (val.starts_with('"') && val.ends_with('"') && val.len() >= 2)
+                || (val.starts_with('\'') && val.ends_with('\'') && val.len() >= 2)
+            {
+                val = &val[1..val.len() - 1];
+            }
+
+            pairs.push((key.to_string(), val.to_string()));
+        }
+    }
+
+    pairs
+}
+
+pub fn source_environment_files(
+    env: &mut HashMap<String, String>,
+    system_sources: &[String],
+    home_dir: &str,
+    user_sources: &[String],
+) {
+    for path_str in system_sources {
+        let path = std::path::Path::new(path_str);
+        for (k, v) in parse_env_file(path) {
+            env.insert(k, v);
+        }
+    }
+
+    if !home_dir.is_empty() {
+        let home_path = std::path::Path::new(home_dir);
+        for rel_path in user_sources {
+            let path = home_path.join(rel_path);
+            for (k, v) in parse_env_file(path) {
+                env.insert(k, v);
+            }
+        }
+    }
+}
+
 pub fn assemble_environment(
     pam_env: &HashMap<String, String>,
     username: &str,
@@ -33,6 +98,8 @@ pub fn assemble_environment(
     session_type: &str,
     display: Option<&str>,
     desktop_names: Option<&str>,
+    system_sources: &[String],
+    user_sources: &[String],
 ) -> HashMap<String, String> {
     let mut env = HashMap::new();
 
@@ -58,7 +125,10 @@ pub fn assemble_environment(
         env.insert(k.clone(), v.clone());
     }
 
-    // 4. Optional Display Variable
+    // 4. Environment Profile Sourcing
+    source_environment_files(&mut env, system_sources, home_dir, user_sources);
+
+    // 5. Optional Display Variable
     if let Some(disp) = display {
         env.insert("DISPLAY".to_string(), disp.to_string());
     }
@@ -248,7 +318,7 @@ mod tests {
         pam_env.insert("PAM_VAR".to_string(), "pam_val".to_string());
         pam_env.insert("PATH".to_string(), "/custom/path".to_string());
 
-        let env = assemble_environment(&pam_env, "alice", "/home/alice", "/bin/zsh", "wayland", None, None);
+        let env = assemble_environment(&pam_env, "alice", "/home/alice", "/bin/zsh", "wayland", None, None, &[], &[]);
 
         assert_eq!(env.get("USER").map(|s| s.as_str()), Some("alice"));
         assert_eq!(env.get("LOGNAME").map(|s| s.as_str()), Some("alice"));
@@ -272,8 +342,64 @@ mod tests {
             "wayland",
             None,
             Some("Sway:Wayland"),
+            &[],
+            &[],
         );
         assert_eq!(env.get("XDG_CURRENT_DESKTOP").map(|s| s.as_str()), Some("Sway:Wayland"));
+    }
+
+    #[test]
+    fn test_parse_env_file() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("lidm_test_env_parse");
+        let content = r#"
+# Comment line
+FOO=bar
+export BAR="quoted value"
+export  BAZ='single quoted'
+  SPACED = trimmed  
+INVALID_LINE_NO_EQUALS
+"#;
+        std::fs::write(&file_path, content).unwrap();
+
+        let pairs = parse_env_file(&file_path);
+        let env_map: HashMap<String, String> = pairs.into_iter().collect();
+
+        assert_eq!(env_map.get("FOO").map(|s| s.as_str()), Some("bar"));
+        assert_eq!(env_map.get("BAR").map(|s| s.as_str()), Some("quoted value"));
+        assert_eq!(env_map.get("BAZ").map(|s| s.as_str()), Some("single quoted"));
+        assert_eq!(env_map.get("SPACED").map(|s| s.as_str()), Some("trimmed"));
+        assert_eq!(env_map.get("INVALID_LINE_NO_EQUALS"), None);
+
+        let _ = std::fs::remove_file(file_path);
+    }
+
+    #[test]
+    fn test_source_environment_files_order_and_precedence() {
+        let temp_dir = std::env::temp_dir();
+        let sys_file = temp_dir.join("lidm_test_sys_profile");
+        let user_dir = temp_dir.join("lidm_test_user_home");
+        let _ = std::fs::create_dir_all(&user_dir);
+        let user_file = user_dir.join(".xprofile");
+
+        std::fs::write(&sys_file, "SYS_VAR=system\nOVERRIDE_VAR=system_val\n").unwrap();
+        std::fs::write(&user_file, "USER_VAR=user\nOVERRIDE_VAR=user_val\n").unwrap();
+
+        let mut env = HashMap::new();
+        source_environment_files(
+            &mut env,
+            &[sys_file.to_string_lossy().to_string()],
+            &user_dir.to_string_lossy(),
+            &[".xprofile".to_string()],
+        );
+
+        assert_eq!(env.get("SYS_VAR").map(|s| s.as_str()), Some("system"));
+        assert_eq!(env.get("USER_VAR").map(|s| s.as_str()), Some("user"));
+        assert_eq!(env.get("OVERRIDE_VAR").map(|s| s.as_str()), Some("user_val"));
+
+        let _ = std::fs::remove_file(sys_file);
+        let _ = std::fs::remove_file(user_file);
+        let _ = std::fs::remove_dir(user_dir);
     }
 
     #[test]

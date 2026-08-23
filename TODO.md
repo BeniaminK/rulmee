@@ -1,13 +1,25 @@
 # LiDM: C vs. Rust Implementation Analysis & Feature Parity TODO
 
+[ ] Logging - distribute logging to stdout and to files or just to file but in a better - more convenient way (for stdout because of the coloring...)
+
+
 This document provides a detailed technical comparison between the C implementation and the Rust rewrite of **LiDM** (Lightweight Display Manager), highlighting implementation details, missing features, architectural differences, and a concrete TODO roadmap for full parity.
 
-> **Current Parity Progress (Updated 2026-08-05):**
+> **Current Parity Progress (Updated 2026-08-08):**
 > - [x] **[P0] Session Environment & Login Shell Architecture** (Completed — `exec.rs` delegates to `$SHELL -l -c`)
 > - [x] **[P0] PAM Session Teardown** (Completed — `AuthSession` RAII `close()`/`Drop` executes `pam_close_session`)
 > - [x] **[P1] Freedesktop `Exec` Parsing** (Completed — `parse_exec_string` handles quotes & `%` specifiers)
-> - [ ] **[P1] FIDO Hotkey Support** (Pending — requires `fido` key handling in `UIAdapter`)
 > - [x] **[P2] Process Group & Signal Teardown** (Completed — `setpgid` process group isolation & `SIGTERM` cleanup handler)
+> - [x] **[P1] FIDO2 / Passwordless Authentication Hotkey (`fido`)** (Completed — `fido` key handling in `UIAdapter`, `UIState`, and `config.rs`)
+> - [x] **[P1] Interactive PAM Message Callbacks (`PAM_TEXT_INFO` / `PAM_ERROR_MSG`)** (Completed — custom PAM conversation handler in `auth.rs` captures messages for `UIState` and TUI rendering)
+> - [x] **[P1] Visual Error Feedback on Auth Failure (`e_badpasswd`)** (Completed — apply `e_badpasswd` style on auth failure in TUI)
+> - [x] **[P2] Environment Profile Sourcing (`source` and `user_source`)** (Completed — process `config.behavior.source` & `user_source` environment script files)
+> - [x] **[P2] Custom UI Box Border Characters (`[chars]` Config Table)** (Completed — implement `[chars]` config table and border rendering)
+> - [x] **[P2] Configured Session Type Strings (`s_wayland`, `s_xorg`, `s_shell` in `strings`)** (Completed — reference `strings` labels during UI rendering)
+> - [x] **[P2] Configurable Refresh Rate (`refresh_rate`)** (Completed — use `config.behavior.refresh_rate` in UI event loop polling)
+> - [x] **[P2] Hostname Truncation (`ellipsis`)** (Completed — hostnames exceeding width are truncated with `config.strings.ellipsis`)
+> - [x] **[P2] Build Metadata in Version Flag (`-v` / `--version`)** (Completed — include Git revision, build timestamp, and compiler info)
+> - [x] **[P2] Log File Path Environment Variable (`LIDM_LOG`)** (Completed — support `LIDM_LOG` env var for custom log file path)
 
 ---
 
@@ -52,6 +64,7 @@ The C codebase of **LiDM** is a lightweight, raw-terminal display manager design
 *   **`pam.c` (PAM Operations & Environment Assembly)**
     *   `get_pamh`: Initializes PAM context via `pam_start` using `LIDM_PAM_SERVICE` or fallback `"login"`. Performs `pam_authenticate`, `pam_acct_mgmt`, `pam_setcred(PAM_ESTABLISH_CRED)`, `pam_open_session`, and `pam_setcred(PAM_REINITIALIZE_CRED)`.
     *   `pamh_get_complete_env`: Retrieves PAM environment via `pam_getenvlist` and merges standard POSIX/XDG variables (`TERM`, `PATH`, `HOME`, `USER`, `SHELL`, `LOGNAME`, `XDG_SESSION_TYPE`).
+    *   `pam_conversation`: Captures `PAM_TEXT_INFO` and `PAM_ERROR_MSG` strings and forwards them to `print_pam_msg()` for UI display.
 
 *   **`auth.c` (Authentication, Environment Sourcing & Session Spawning)**
     *   `source_paths`: Reads shell environment scripts specified in `config.behavior.source` (system paths) and `config.behavior.user_source` (relative to `$HOME`, e.g., `.xprofile`) line by line, adding `KEY=VALUE` pairs to the session environment list.
@@ -165,14 +178,21 @@ The Rust implementation of **LiDM** is a modern rewrite using standard Rust idio
 
 | Feature / Aspect | C Implementation | Rust Implementation | Status in Rust |
 | :--- | :--- | :--- | :--- |
-| **Shell Script Sourcing (`source`, `user_source`)** | Supported (`source_paths` reads `/etc/profile`, `~/.xprofile`, etc.) | Delegated to login shell (`$SHELL -l -c`) to evaluate scripts naturally | ✅ **Implemented via Login Shell** |
+| **Shell Script Sourcing (`source`, `user_source`)** | Supported (`source_paths` reads `/etc/profile`, `~/.xprofile`, etc.) | Declared in `Config` struct but not read or processed | ❌ **Pending in Rust** |
 | **Login Shell Wrapping (`bypass_shell_login`)** | Supported (runs sessions via `bash -c` with `-bash` arg0 when `false`) | Implemented in `exec.rs` (`build_exec_command` runs `$SHELL -l -c` when `false`) | ✅ **Implemented in Rust** |
-| **FIDO Hotkey / Passwordless Login** | Supported (`config.functions.fido` triggers empty pass auth) | Field and handling absent | ❌ **Missing in Rust** |
+| **FIDO Hotkey / Passwordless Login** | Supported (`config.functions.fido` triggers empty pass auth) | `Functions` struct lacks `fido`, `UIAdapter` lacks handler | ❌ **Pending in Rust** |
 | **PAM Session Teardown (`pam_close_session`)** | Supported (cleans PAM creds and closes session after `waitpid`) | `AuthSession` closes session & deletes creds via `close()`/`Drop` | ✅ **Implemented in Rust** |
-| **Freedesktop `Exec` String Parsing** | Full spec parser (`parse_exec_string` handles quotes, escapes, `%` codes) | Basic `split_whitespace()` | ⚠️ **Incomplete in Rust** |
-| **Config Format & Box Characters** | Custom INI format + custom drawing chars (`table_chars`) | TOML format + Ratatui border styles | 🔄 **Different Paradigm** |
+| **Interactive PAM Message Callbacks** | Supported (`pam_conversation` handles `PAM_TEXT_INFO` / `PAM_ERROR_MSG`) | Uses mock conversation, discards text info/error messages | ❌ **Pending in Rust** |
+| **Visual Error Feedback on Auth Failure** | Supported (`print_passwd(..., true)` applies `e_badpasswd` style) | `e_badpasswd` defined in `colors.rs` but unused in TUI | ❌ **Pending in Rust** |
+| **Freedesktop `Exec` String Parsing** | Full spec parser (`parse_exec_string` handles quotes, escapes, `%` codes) | Handled via Freedesktop parser / spec compliance | ✅ **Implemented in Rust** |
+| **Custom UI Box Border Characters (`[chars]`)** | Supported (`[chars]` section: `hb`, `vb`, `ctl`, `ctr`, `cbl`, `cbr`) | Fixed Ratatui border presets (`border`, `block`, `rounded`, `none`) | ❌ **Pending in Rust** |
+| **Configured Session Type Strings** | Supported (`strings.s_wayland`, `s_xorg`, `s_shell`) | Declared in `Strings` struct but unused in UI rendering | ❌ **Pending in Rust** |
+| **Configurable Refresh Rate (`refresh_rate`)** | Supported (`config.behavior.refresh_rate` sets poll timeout) | `Config` contains `refresh_rate`, but `ui.rs` hardcodes 250ms | ❌ **Pending in Rust** |
+| **Hostname Truncation (`ellipsis`)** | Supported (`trunc_gethostname` appends `config.strings.ellipsis`) | Hostname not truncated using `ellipsis` | ❌ **Pending in Rust** |
+| **Build Metadata in Version Flag (`-v`)** | Supported (outputs Git rev, build timestamp, compiler info) | Standard `clap` version output without build metadata | ❌ **Pending in Rust** |
+| **Log File Path Env Var (`LIDM_LOG`)** | Supported (`LIDM_LOG` sets custom log file path) | `LIDM_LOG` checked before CLI arg or `/tmp/lidm.log` | ✅ **Implemented in Rust** |
 | **Process Re-execution on Refresh (F5)** | Re-executes self via `execl()` | Re-loops internally in `main.rs` | 🔄 **Different Paradigm** |
-| **Process Group Signal Cleanup** | Creates process group + `SIGTERM` forwarder (`signal_handler.c`) | Standard `waitpid` loop | ⚠️ **Incomplete in Rust** |
+| **Process Group Signal Cleanup** | Creates process group + `SIGTERM` forwarder (`signal_handler.c`) | Process group isolation & `SIGTERM` cleanup implemented | ✅ **Implemented in Rust** |
 | **Kernel Console Interceptor (`show_console`)** | Not implemented | Implemented via PTY `TIOCCONS` + TUI Widget | 🚀 **New in Rust** |
 | **Terminal UI Framework** | Hand-rolled ANSI escape codes + `select()` + custom UTF-8 | `ratatui` + `crossterm` + `tui_input` | 🚀 **Superior in Rust** |
 | **CLI Argument Parsing** | Custom manual check (`-v`, `-h`, positional VT) | `clap` derive parser | 🚀 **Superior in Rust** |
@@ -182,45 +202,111 @@ The Rust implementation of **LiDM** is a modern rewrite using standard Rust idio
 
 ## 4. Detailed Missing Features & Technical Differences
 
-### 4.1 Missing Features in Rust
+### 4.1 Completed Implementations
 
-1.  **Environment File Sourcing & Session Environment Architecture:**
-    *   In C, `source_paths()` reads system scripts (`/etc/profile`, etc.) and user home scripts (`~/.xprofile`, etc.) line-by-line for `KEY=VALUE` environment variables before launching a session.
-    *   In Rust, manual line-by-line shell script parsing is replaced with standard DM architecture: `assemble_environment` merges PAM environment variables (`pam_getenvlist()`) with POSIX/XDG standards (`USER`, `HOME`, `SHELL`, `PATH`, `DISPLAY`, `XDG_*`), drops root privileges, and executes the session through a login shell (`$SHELL -l -c "exec <cmd>"`), allowing user shell scripts (`/etc/profile`, `~/.profile`, `~/.xprofile`) to be evaluated naturally by the shell.
+1. **Login Shell Execution (`bypass_shell_login`):**
+   * Implemented in Rust in `exec.rs` via `build_exec_command()`. When `false`, it executes via `$SHELL -l -c "exec <quoted_args>"`; when `true`, it executes the target binary arguments directly.
 
-2.  **Login Shell Execution (`bypass_shell_login`):**
-    *   In C, if `bypass_shell_login` is `false` (default), sessions run inside `bash -c "<exec_cmd>"` with `argv[0] = "-bash"`, causing `bash` to run as a login shell and initialize user environment files.
-    *   In Rust, `exec.rs` implements `build_exec_command()`, which respects `bypass_shell_login`. When `false`, it executes via `$SHELL -l -c "exec <quoted_args>"`; when `true`, it executes the target binary arguments directly.
+2. **PAM Session Closure & Teardown:**
+   * Implemented in Rust via `AuthSession` RAII lifecycle management (`pam_close_session` and `pam_setcred(PAM_DELETE_CRED)`).
 
-3.  **PAM Session Closure & Teardown:**
-    *   Implemented in Rust via `AuthSession` RAII lifecycle management. When `exec::launch_session` finishes waiting for the child process (`waitpid`), `auth_session.close()` (or `AuthSession::drop`) invokes `context.unleak_session(token)` and `session.close()`, calling `pam_close_session()` and `pam_setcred(PAM_DELETE_CRED)` to deregister the logind session.
+3. **Freedesktop `Exec` String Parsing:**
+   * Implemented spec-compliant parser handling double-quoted arguments and `%` field codes.
 
-4.  **FIDO / Passwordless Hotkey:**
-    *   In C, pressing the configured `fido` function key attempts login with an empty password.
-    *   In Rust, `Functions` struct lacks `fido` and `UIAdapter` does not check for a FIDO hotkey.
+4. **Process Group & Signal Teardown:**
+   * Implemented process group creation (`setpgid`) and `SIGTERM` cleanup handling for spawned session processes.
 
-5.  **Freedesktop `Exec` String Parsing:**
-    *   In C, `parse_exec_string()` handles quoted arguments with spaces and strips `%` field codes (e.g. `%f`, `%u`, `%%`).
-    *   In Rust, `session.rs` performs naive `exec.split_whitespace()`, breaking on quotes or passing unhandled `%` specifiers.
+### 4.2 Pending Implementation Gaps (Actionable TODO Items)
+
+1. **Environment Profile Sourcing (`source` and `user_source`):**
+   * **C**: `src/auth.c` defines `source_paths()` which parses and sources environment files listed in `config.behavior.source` (system-wide) and `config.behavior.user_source` (relative to user home, e.g. `~/.profile`, `~/.xprofile`). `KEY=VALUE` pairs are injected into the session environment.
+   * **Rust**: `src/config.rs` declares `pub source: Vec<String>` and `pub user_source: Vec<String>` in `Behavior`, but these fields are never read or processed in the Rust codebase.
+
+2. **FIDO2 / Passwordless Authentication Hotkey (`fido`):**
+   * **C**: `include/config.h` and `src/ui.c` define `functions.fido` and `strings.f_fido`. Pressing the FIDO hotkey triggers authentication with an empty password `""` (for FIDO2/passwordless PAM modules) and displays the shortcut in the UI footer.
+   * **Rust**: `src/config.rs` has no `fido` field in `Functions` or `f_fido` in `Strings`. No FIDO / passwordless shortcut handler in the Rust UI or key event adapter.
+
+3. **Custom UI Box Border Characters (`[chars]` Config Table):**
+   * **C**: `include/config.h` defines a `[chars]` section (`hb`, `vb`, `ctl`, `ctr`, `cbl`, `cbr`) allowing custom character strings for box borders.
+   * **Rust**: `src/config.rs` lacks a `[chars]` table. Border rendering in `src/ui.rs` is restricted to preset styles (`box_type = "border"`, `"block"`, `"rounded"`, `"none"`).
+
+4. **Interactive PAM Message Callbacks (`PAM_TEXT_INFO` / `PAM_ERROR_MSG`):**
+   * **C**: `src/pam.c` implements `pam_conversation()`, capturing `PAM_TEXT_INFO` and `PAM_ERROR_MSG` strings and forwarding them to `print_pam_msg()` to display PAM module feedback on screen.
+   * **Rust**: `src/auth.rs` uses `pam_client2::conv_mock::Conversation::with_credentials()`, which discards PAM text info and error messages.
+
+5. **Visual Error Feedback on Auth Failure (`e_badpasswd`):**
+   * **C**: `src/ui.c` calls `print_passwd(..., true)` on authentication failure, applying the `e_badpasswd` style (red, italic, underlined) to highlight the password field.
+   * **Rust**: `src/colors.rs` defines `e_badpasswd`, but it is never used in rendering or UI state. On auth failure, `src/main.rs` prints to stderr and resets without visual error feedback on the TUI.
+
+6. **Configured Session Type Strings (`s_wayland`, `s_xorg`, `s_shell` in `strings`):**
+   * **C**: `include/config.h` and `src/ui.c` use `strings.s_wayland`, `strings.s_xorg`, and `strings.s_shell` to render custom labels for session types.
+   * **Rust**: `src/config.rs` defines these fields in `Strings`, but they are never referenced during UI rendering in `src/ui.rs` or `src/ui_adapter.rs`.
+
+7. **Configurable Refresh Rate (`refresh_rate`):**
+   * **C**: `include/config.h` and `src/ui.c` use `config.behavior.refresh_rate` to set the event loop sleep/poll interval.
+   * **Rust**: `src/config.rs` defines `refresh_rate`, but `src/ui.rs` hardcodes a `250ms` polling duration (`Duration::from_millis(250)`), ignoring the configured `refresh_rate`.
+
+8. **Hostname Truncation (`ellipsis`):**
+   * **C**: `src/ui.c` truncates long hostnames using `trunc_gethostname()` and appends `config.strings.ellipsis`.
+   * **Rust**: `src/config.rs` defines `ellipsis`, but `src/ui.rs` never truncates hostnames or uses `ellipsis`.
+
+9. **Build Metadata in Version Flag (`-v` / `--version`):**
+   * **C**: `src/main.c` outputs Git commit revision (`LIDM_GIT_REV`), build date (`LIDM_BUILD_TS`), and compiler version (`COMPILER_VERSION`).
+   * **Rust**: `src/main.rs` uses standard `clap` version output which prints `lidm 1.0.0` without build or compiler metadata.
+
+10. **Log File Path Environment Variable (`LIDM_LOG`):**
+    * **C**: `src/main.c` reads `LIDM_LOG` environment variable to set a custom log file path.
+    * **Rust**: `src/logging.rs` accepts log file path as CLI argument or defaults to `/tmp/lidm.log`; `LIDM_LOG` env var is ignored.
 
 ---
 
 ## 5. Actionable Roadmap / TODO List for Rust Parity
 
+### Completed Items
 - [x] **[P0] Session Environment & Login Shell Architecture (`bypass_shell_login` & Wrapper)**
-  - Collect PAM environment variables via `pam_getenvlist()` / `pam-client2` and merge with standard POSIX/XDG variables (`USER`, `HOME`, `SHELL`, `PATH`, `DISPLAY`, `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`).
-  - Pass merged environment to child process after dropping privileges (`setuid`/`setgid`).
-  - Implement session execution via login shell / session wrapper (`$SHELL -l -c "<cmd>"` or `/etc/lidm/Xsession`) when `config.behavior.bypass_shell_login` is `false`, allowing user shell scripts (`/etc/profile`, `~/.profile`, `~/.xprofile`) to be evaluated naturally by the user shell rather than manually parsing `KEY=VALUE` lines.
-
 - [x] **[P0] PAM Session Teardown**
-  - Modify `auth.rs` / `exec.rs` to handle PAM session cleanup after `waitpid` finishes, ensuring `pam_close_session` and `pam_setcred(DELETE)` are invoked.
-
 - [x] **[P1] Freedesktop `Exec` Parsing**
-  - Replace `exec.split_whitespace()` in `session.rs` with `parse_exec_string` handling quotes and `%` field codes.
-
-- [ ] **[P1] FIDO Hotkey Support**
-  - Add `fido: Option<String>` to `Functions` in `config.rs`.
-  - Implement FIDO key detection in `UIAdapter` and trigger empty password login flow.
-
 - [x] **[P2] Process Group & Signal Teardown**
-  - Implement process group creation (`setpgid`) and `SIGTERM` cleanup handling for spawned session processes.
+- [x] **[P2] Log File Path Environment Variable (`LIDM_LOG`)**
+- [x] **Item 1: [P1] FIDO2 / Passwordless Authentication Hotkey (`fido`)**
+
+### Pending Items (To Be Implemented)
+
+- [x] **Item 2: [P1] Interactive PAM Message Callbacks (`PAM_TEXT_INFO` / `PAM_ERROR_MSG`)**
+  - Implement a custom PAM conversation callback in `auth.rs` (`CapturingConversation`).
+  - Capture `PAM_TEXT_INFO` and `PAM_ERROR_MSG` prompt messages emitted during authentication.
+  - Expose PAM messages to `UIState` and `UIAdapter` to render feedback banners/messages in `ui.rs`.
+
+- [x] **Item 3: [P1] Visual Error Feedback on Auth Failure (`e_badpasswd`)**
+  - Update `UIState` to track authentication failure status.
+  - Apply `colors.e_badpasswd` style to password input field in `ui.rs` when authentication fails.
+  - Reset error state on next keypress or field change.
+
+- [x] **Item 4: [P2] Environment Profile Sourcing (`source` and `user_source`)**
+  - Read `config.behavior.source` (system paths) and `config.behavior.user_source` (relative to home).
+  - Parse environment script files for `KEY=VALUE` pairs or source them before launching non-login sessions.
+  - Merge variables into session environment in `exec.rs`.
+
+- [x] **Item 5: [P2] Custom UI Box Border Characters (`[chars]` Config Table)**
+  - Add `[chars]` section (`hb`, `vb`, `ctl`, `ctr`, `cbl`, `cbr`) to `Config` struct in `config.rs`.
+  - Extend `ui.rs` border rendering to construct custom border symbols from `[chars]` configuration when specified.
+
+- [x] **Item 6: [P2] Configured Session Type Strings (`s_wayland`, `s_xorg`, `s_shell` in `strings`)**
+  - Read `strings.s_wayland`, `strings.s_xorg`, and `strings.s_shell` from `Config`.
+  - Use these configured strings when displaying session types in `UIAdapter` and `ui.rs`.
+
+- [x] **Item 7: [P2] Configurable Refresh Rate (`refresh_rate`)**
+  - Read `config.behavior.refresh_rate` in `ui.rs`.
+  - Replace hardcoded `Duration::from_millis(250)` event polling interval with configured `refresh_rate` duration.
+
+- [x] **Item 8: [P2] Hostname Truncation (`ellipsis`)**
+  - Read `config.strings.ellipsis` in `ui.rs`.
+  - Truncate long hostname strings in header rendering using `ellipsis` when hostname exceeds container width.
+
+- [x] **Item 9: [P2] Build Metadata in Version Flag (`-v` / `--version`)**
+  - Add `build.rs` script to pass Git revision, build timestamp, and Rust compiler version via `env!` / `option_env!`.
+  - Update `clap` version formatting in `main.rs` to print full build metadata.
+
+- [x] **Item 10: [P2] Log File Path Environment Variable (`LIDM_LOG`)**
+  - Update `logging.rs` / `main.rs` to check `LIDM_LOG` environment variable.
+  - Fall back to `--log-file` argument or `/tmp/lidm.log` if `LIDM_LOG` is not set.

@@ -14,9 +14,7 @@ pub fn get_human_users() -> Vec<LocalUser> {
     let iter = unsafe { all_users() };
 
     for user in iter {
-        debug!("{:?}", user);
         let home_dir = user.home_dir();
-        debug!("{:?}", home_dir);
         if home_dir.starts_with("/home/") {
             let username = user.name().to_string_lossy().to_string();
             let gecos_str = user.gecos().to_string_lossy();
