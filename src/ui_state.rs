@@ -24,6 +24,15 @@ impl Field {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LoginRequest {
+    pub session_idx: usize,
+    pub user_idx: usize,
+    pub password: String,
+    pub custom_session: String,
+    pub custom_user: String,
+}
+
 /// Pure data holder — no logic, no methods.
 /// All state mutation and query logic lives in `UIAdapter`.
 pub struct UIState {
@@ -43,14 +52,14 @@ pub struct UIState {
 }
 
 impl UIState {
-    /// Returns login data tuple formatted for FIDO passwordless authentication (empty password).
-    pub fn fido_login_tuple(&self) -> (usize, usize, String, String, String) {
-        (
-            self.selected_session_idx,
-            self.selected_user_idx,
-            String::new(),
-            self.session_input.value().to_string(),
-            self.user_input.value().to_string(),
-        )
+    /// Returns login request formatted for FIDO passwordless authentication (empty password).
+    pub fn fido_login_request(&self) -> LoginRequest {
+        LoginRequest {
+            session_idx: self.selected_session_idx,
+            user_idx: self.selected_user_idx,
+            password: String::new(),
+            custom_session: self.session_input.value().to_string(),
+            custom_user: self.user_input.value().to_string(),
+        }
     }
 }

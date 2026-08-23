@@ -1,9 +1,7 @@
-use crate::config::{BoxType, Config};
-use crate::console::ConsoleBuffer;
-use crate::session::Session;
+use crate::config::BoxType;
+pub use crate::ui_adapter::UIContext;
 use crate::ui_adapter::{HotkeyAction, UIAdapter};
-use crate::ui_state::Field;
-use crate::users::LocalUser;
+use crate::ui_state::{Field, LoginRequest};
 use chrono::Local;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Position;
@@ -19,7 +17,7 @@ use ratatui::{
 use std::io;
 
 pub enum UIResult {
-    Login(usize, usize, String, String, String),
+    Login(LoginRequest),
     Poweroff,
     Reboot,
     Exit,
@@ -34,27 +32,9 @@ const GAP_W: u16 = 3;
 const CONSOLE_H: u16 = 8;
 
 impl UI {
-    pub fn new(
-        config: Config,
-        sessions: Vec<Session>,
-        users: Vec<LocalUser>,
-        initial_user: Option<&str>,
-        initial_session: Option<&str>,
-        console_buffer: Option<ConsoleBuffer>,
-        pam_messages: Vec<crate::auth::PamMessage>,
-        auth_error: bool,
-    ) -> Self {
+    pub fn new(ctx: UIContext) -> Self {
         Self {
-            adapter: UIAdapter::new(
-                config,
-                sessions,
-                users,
-                initial_user,
-                initial_session,
-                console_buffer,
-                pam_messages,
-                auth_error,
-            ),
+            adapter: UIAdapter::new(ctx),
         }
     }
 
@@ -89,10 +69,7 @@ impl UI {
             return match action {
                 HotkeyAction::Poweroff => Some(UIResult::Poweroff),
                 HotkeyAction::Reboot => Some(UIResult::Reboot),
-                HotkeyAction::Fido => {
-                    let (s, u, p, cs, cu) = self.adapter.fido_login_data();
-                    Some(UIResult::Login(s, u, p, cs, cu))
-                }
+                HotkeyAction::Fido => Some(UIResult::Login(self.adapter.fido_login_request())),
                 HotkeyAction::Theme => {
                     log::debug!("handle_key_event: F3 (theme) hotkey pressed");
                     self.adapter.cycle_theme();
@@ -105,8 +82,7 @@ impl UI {
             (KeyCode::Up, _) => self.adapter.move_focus_up(),
             (KeyCode::Down, _) => self.adapter.move_focus_down(),
             (KeyCode::Enter, _) => {
-                let (s, u, p, cs, cu) = self.adapter.login_data();
-                return Some(UIResult::Login(s, u, p, cs, cu));
+                return Some(UIResult::Login(self.adapter.login_request()));
             }
             _ => self.adapter.handle_field_key(key),
         }
@@ -422,6 +398,7 @@ pub fn truncate_str(s: &str, max_width: usize, ellipsis: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
 
     #[test]
     fn test_truncate_str_no_truncation_needed() {
@@ -461,7 +438,10 @@ mod tests {
         ] {
             let mut config = Config::default();
             config.behavior.box_type = box_type;
-            let ui = UI::new(config, vec![], vec![], None, None, None, vec![], false);
+            let ui = UI::new(UIContext {
+                config,
+                ..Default::default()
+            });
             let mut buf = Buffer::empty(area);
             Widget::render(&ui, area, &mut buf);
 
@@ -478,7 +458,10 @@ mod tests {
         // Test BoxType::None
         let mut config = Config::default();
         config.behavior.box_type = BoxType::None;
-        let ui = UI::new(config, vec![], vec![], None, None, None, vec![], false);
+        let ui = UI::new(UIContext {
+            config,
+            ..Default::default()
+        });
         let mut buf = Buffer::empty(area);
         Widget::render(&ui, area, &mut buf);
         let (bx, _, _) = UI::layout(area, false, false);
@@ -493,7 +476,10 @@ mod tests {
         let mut config = Config::default();
         config.behavior.show_theme = true;
 
-        let mut ui = UI::new(config.clone(), vec![], vec![], None, None, None, vec![], false);
+        let mut ui = UI::new(UIContext {
+            config: config.clone(),
+            ..Default::default()
+        });
         ui.adapter.state.themes = vec![crate::theme::Theme {
             name: "test_theme".to_string(),
             colors: config.colors,

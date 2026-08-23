@@ -16,7 +16,8 @@ mod launch_state;
 mod signal_handler;
 
 use crate::session::SessionType;
-use crate::ui::{UI, UIResult};
+use crate::ui::{UI, UIContext, UIResult};
+use crate::ui_state::LoginRequest;
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 use std::ffi::c_int;
@@ -131,27 +132,32 @@ pub fn resolve_session(
     }
 }
 
+pub struct LoginContext<'a> {
+    pub config: &'a config::Config,
+    pub sessions: &'a [session::Session],
+    pub users: &'a [users::LocalUser],
+    pub vt: Option<c_int>,
+    pub bypass_shell_login: bool,
+}
+
 pub fn handle_login(
-    user_idx: usize,
-    session_idx: usize,
-    password: String,
-    custom_session: String,
-    custom_user: String,
-    config: &config::Config,
-    sessions: &[session::Session],
-    users: &[users::LocalUser],
-    vt: Option<c_int>,
-    bypass_shell_login: bool,
+    request: &LoginRequest,
+    ctx: &LoginContext,
 ) -> Result<(), auth::AuthError> {
-    let user_sel = resolve_user(users, user_idx, custom_user);
-    let session_sel = resolve_session(sessions, session_idx, custom_session, &user_sel.shell);
+    let user_sel = resolve_user(ctx.users, request.user_idx, request.custom_user.clone());
+    let session_sel = resolve_session(
+        ctx.sessions,
+        request.session_idx,
+        request.custom_session.clone(),
+        &user_sel.shell,
+    );
 
     let _ = launch_state::write_launch_state(&launch_state::LaunchState {
         username: user_sel.username.clone(),
         session_opt: session_sel.name.clone(),
     });
 
-    let mut auth_session = auth::authenticate(&user_sel.username, &password, &config.auth.pam_service)?;
+    let mut auth_session = auth::authenticate(&user_sel.username, &request.password, &ctx.config.auth.pam_service)?;
 
     let Some(u) = uzers::get_user_by_name(&user_sel.username) else {
         eprintln!("User not found in system: {}", user_sel.username);
@@ -164,29 +170,32 @@ pub fn handle_login(
     let gid = u.primary_group_id();
     let session_type_str = if session_sel.is_xorg { "x11" } else { "wayland" };
 
-    let env = exec::assemble_environment(
-        &auth_session.env,
-        &user_sel.username,
-        &home_dir,
-        &user_sel.shell,
-        session_type_str,
-        None,
-        session_sel.desktop_names.as_deref(),
-        &config.behavior.source,
-        &config.behavior.user_source,
-    );
+    let env_opts = exec::EnvironmentOptions {
+        pam_env: &auth_session.env,
+        username: &user_sel.username,
+        home_dir: &home_dir,
+        shell: &user_sel.shell,
+        session_type: session_type_str,
+        display: None,
+        desktop_names: session_sel.desktop_names.as_deref(),
+        system_sources: &ctx.config.behavior.source,
+        user_sources: &ctx.config.behavior.user_source,
+    };
+    let env = exec::assemble_environment(&env_opts);
 
-    if let Err(e) = exec::launch_session(
-        &user_sel.username,
+    let launch_ctx = exec::LaunchContext {
+        user: &user_sel.username,
         uid,
         gid,
-        &env,
-        &session_sel.exec_args,
-        session_sel.is_xorg,
-        vt,
-        &user_sel.shell,
-        bypass_shell_login,
-    ) {
+        env: &env,
+        exec_args: &session_sel.exec_args,
+        is_xorg: session_sel.is_xorg,
+        vt: ctx.vt,
+        user_shell: &user_sel.shell,
+        bypass_shell_login: ctx.bypass_shell_login,
+    };
+
+    if let Err(e) = exec::launch_session(&launch_ctx) {
         eprintln!("Failed to launch session: {}", e);
     }
 
@@ -277,31 +286,27 @@ fn main() {
         };
         let bypass_shell_login = config.behavior.bypass_shell_login;
 
-        let mut ui = UI::new(
-            config.clone(),
-            sessions.clone(),
-            users.clone(),
+        let mut ui = UI::new(UIContext {
+            config: config.clone(),
+            sessions: sessions.clone(),
+            users: users.clone(),
             initial_user,
             initial_session,
-            Some(console_buffer.clone()),
-            pam_messages.clone(),
-            auth_failed,
-        );
+            console_buffer: Some(console_buffer.clone()),
+            pam_messages: pam_messages.clone(),
+            auth_error: auth_failed,
+        });
 
         match ui.run() {
-            Ok(UIResult::Login(session_idx, user_idx, password, custom_session, custom_user)) => {
-                match handle_login(
-                    user_idx,
-                    session_idx,
-                    password,
-                    custom_session,
-                    custom_user,
-                    &config,
-                    &sessions,
-                    &users,
-                    args.vt,
+            Ok(UIResult::Login(login_req)) => {
+                let login_ctx = LoginContext {
+                    config: &config,
+                    sessions: &sessions,
+                    users: &users,
+                    vt: args.vt,
                     bypass_shell_login,
-                ) {
+                };
+                match handle_login(&login_req, &login_ctx) {
                     Ok(()) => {
                         pam_messages.clear();
                         auth_failed = false;
@@ -427,6 +432,32 @@ mod tests {
         assert_eq!(sel.exec_args, vec!["startxfce4"]);
         assert!(!sel.is_xorg);
         assert_eq!(sel.desktop_names, None);
+    }
+
+    #[test]
+    fn test_login_request_and_context_creation() {
+        let req = LoginRequest {
+            session_idx: 0,
+            user_idx: 1,
+            password: "secret".to_string(),
+            custom_session: "".to_string(),
+            custom_user: "".to_string(),
+        };
+        let cfg = config::Config::default();
+        let sessions = vec![];
+        let users = vec![];
+        let ctx = LoginContext {
+            config: &cfg,
+            sessions: &sessions,
+            users: &users,
+            vt: Some(7),
+            bypass_shell_login: false,
+        };
+
+        assert_eq!(req.session_idx, 0);
+        assert_eq!(req.user_idx, 1);
+        assert_eq!(ctx.vt, Some(7));
+        assert!(!ctx.bypass_shell_login);
     }
 }
 

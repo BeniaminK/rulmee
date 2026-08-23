@@ -1,12 +1,24 @@
 use crate::config::Config;
 use crate::console::ConsoleBuffer;
 use crate::session::{Session, SessionType};
-use crate::ui_state::{Field, PamMessage, UIState};
+use crate::ui_state::{Field, LoginRequest, PamMessage, UIState};
 use crate::users::LocalUser;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::style::Style;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
+
+#[derive(Default)]
+pub struct UIContext<'a> {
+    pub config: Config,
+    pub sessions: Vec<Session>,
+    pub users: Vec<LocalUser>,
+    pub initial_user: Option<&'a str>,
+    pub initial_session: Option<&'a str>,
+    pub console_buffer: Option<ConsoleBuffer>,
+    pub pam_messages: Vec<PamMessage>,
+    pub auth_error: bool,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HotkeyAction {
@@ -25,21 +37,12 @@ pub struct UIAdapter {
 }
 
 impl UIAdapter {
-    pub fn new(
-        config: Config,
-        sessions: Vec<Session>,
-        users: Vec<LocalUser>,
-        initial_user: Option<&str>,
-        initial_session: Option<&str>,
-        console_buffer: Option<ConsoleBuffer>,
-        pam_messages: Vec<PamMessage>,
-        auth_error: bool,
-    ) -> Self {
-        let include_defshell = config.behavior.include_defshell;
+    pub fn new(ctx: UIContext) -> Self {
+        let include_defshell = ctx.config.behavior.include_defshell;
 
         // Resolve initial user — restore custom value if not in the list
-        let (user_idx, custom_user, user_input) = match initial_user {
-            Some(name) => match users.iter().position(|u| u.username == name) {
+        let (user_idx, custom_user, user_input) = match ctx.initial_user {
+            Some(name) => match ctx.users.iter().position(|u| u.username == name) {
                 Some(idx) => (idx, false, Input::default()),
                 None => (0, true, Input::new(name.to_string())),
             },
@@ -47,13 +50,13 @@ impl UIAdapter {
         };
 
         // Resolve initial session — restore custom value if not in the list
-        let (session_idx, custom_session, session_input) = match initial_session {
+        let (session_idx, custom_session, session_input) = match ctx.initial_session {
             Some(name) => {
-                if let Some(idx) = sessions.iter().position(|s| s.name == name) {
+                if let Some(idx) = ctx.sessions.iter().position(|s| s.name == name) {
                     (idx, false, Input::default())
-                } else if include_defshell && users.get(user_idx).map_or(false, |u| u.shell == name)
+                } else if include_defshell && ctx.users.get(user_idx).is_some_and(|u| u.shell == name)
                 {
-                    (sessions.len(), false, Input::default())
+                    (ctx.sessions.len(), false, Input::default())
                 } else {
                     (0, true, Input::new(name.to_string()))
                 }
@@ -61,12 +64,12 @@ impl UIAdapter {
             None => (0, false, Input::default()),
         };
 
-        let themes = crate::theme::discover_themes(&config.colors);
+        let themes = crate::theme::discover_themes(&ctx.config.colors);
 
         Self {
-            config,
-            sessions,
-            users,
+            config: ctx.config,
+            sessions: ctx.sessions,
+            users: ctx.users,
             state: UIState {
                 selected_session_idx: session_idx,
                 selected_user_idx: user_idx,
@@ -76,12 +79,12 @@ impl UIAdapter {
                 focused_field: Field::User,
                 custom_session,
                 custom_user,
-                auth_error,
-                pam_messages,
+                auth_error: ctx.auth_error,
+                pam_messages: ctx.pam_messages,
                 themes,
                 current_theme_idx: 0,
             },
-            console_buffer,
+            console_buffer: ctx.console_buffer,
         }
     }
 
@@ -250,18 +253,18 @@ impl UIAdapter {
 
     // --- Result extraction ---
 
-    pub fn login_data(&self) -> (usize, usize, String, String, String) {
-        (
-            self.state.selected_session_idx,
-            self.state.selected_user_idx,
-            self.state.password_input.value().to_string(),
-            self.state.session_input.value().to_string(),
-            self.state.user_input.value().to_string(),
-        )
+    pub fn login_request(&self) -> LoginRequest {
+        LoginRequest {
+            session_idx: self.state.selected_session_idx,
+            user_idx: self.state.selected_user_idx,
+            password: self.state.password_input.value().to_string(),
+            custom_session: self.state.session_input.value().to_string(),
+            custom_user: self.state.user_input.value().to_string(),
+        }
     }
 
-    pub fn fido_login_data(&self) -> (usize, usize, String, String, String) {
-        self.state.fido_login_tuple()
+    pub fn fido_login_request(&self) -> LoginRequest {
+        self.state.fido_login_request()
     }
 
     // --- View queries (called by renderer) ---
@@ -420,7 +423,11 @@ mod tests {
             },
         ];
 
-        let mut adapter = UIAdapter::new(config, sessions, vec![], None, None, None, vec![], false);
+        let mut adapter = UIAdapter::new(UIContext {
+            config,
+            sessions,
+            ..Default::default()
+        });
 
         // Initially index 0: Sway (Wayland)
         assert_eq!(adapter.session_label(), "Wayland Display");
@@ -440,8 +447,11 @@ mod tests {
     #[test]
     fn test_auth_error_styling_and_clearing() {
         let config = Config::default();
-        let mut adapter =
-            UIAdapter::new(config.clone(), vec![], vec![], None, None, None, vec![], true);
+        let mut adapter = UIAdapter::new(UIContext {
+            config: config.clone(),
+            auth_error: true,
+            ..Default::default()
+        });
 
         assert!(adapter.auth_error());
         assert_eq!(
@@ -464,30 +474,27 @@ mod tests {
         config.functions.fido = Some("F3".to_string());
         config.strings.f_fido = Some("fido_key".to_string());
 
-        let adapter = UIAdapter::new(config, vec![], vec![], None, None, None, vec![], false);
+        let adapter = UIAdapter::new(UIContext {
+            config,
+            ..Default::default()
+        });
 
         assert_eq!(
             adapter.check_hotkey(crossterm::event::KeyCode::F(3)),
             Some(HotkeyAction::Fido)
         );
 
-        let (_, _, password, _, _) = adapter.fido_login_data();
-        assert_eq!(password, "");
+        let req = adapter.fido_login_request();
+        assert_eq!(req.password, "");
     }
 
     #[test]
     fn test_theme_hotkey_detection_and_cycling() {
         let config = Config::default();
-        let mut adapter = UIAdapter::new(
+        let mut adapter = UIAdapter::new(UIContext {
             config,
-            Vec::new(),
-            Vec::new(),
-            None,
-            None,
-            None,
-            Vec::new(),
-            false,
-        );
+            ..Default::default()
+        });
 
         // F3 is the default theme hotkey
         assert_eq!(

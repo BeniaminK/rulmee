@@ -90,46 +90,49 @@ pub fn source_environment_files(
     }
 }
 
-pub fn assemble_environment(
-    pam_env: &HashMap<String, String>,
-    username: &str,
-    home_dir: &str,
-    shell: &str,
-    session_type: &str,
-    display: Option<&str>,
-    desktop_names: Option<&str>,
-    system_sources: &[String],
-    user_sources: &[String],
-) -> HashMap<String, String> {
+#[derive(Debug, Clone)]
+pub struct EnvironmentOptions<'a> {
+    pub pam_env: &'a HashMap<String, String>,
+    pub username: &'a str,
+    pub home_dir: &'a str,
+    pub shell: &'a str,
+    pub session_type: &'a str,
+    pub display: Option<&'a str>,
+    pub desktop_names: Option<&'a str>,
+    pub system_sources: &'a [String],
+    pub user_sources: &'a [String],
+}
+
+pub fn assemble_environment(opts: &EnvironmentOptions) -> HashMap<String, String> {
     let mut env = HashMap::new();
 
     // 1. POSIX Credential Defaults
-    env.insert("USER".to_string(), username.to_string());
-    env.insert("LOGNAME".to_string(), username.to_string());
-    env.insert("HOME".to_string(), home_dir.to_string());
-    env.insert("SHELL".to_string(), shell.to_string());
+    env.insert("USER".to_string(), opts.username.to_string());
+    env.insert("LOGNAME".to_string(), opts.username.to_string());
+    env.insert("HOME".to_string(), opts.home_dir.to_string());
+    env.insert("SHELL".to_string(), opts.shell.to_string());
     env.insert(
         "PATH".to_string(),
         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string(),
     );
 
     // 2. Freedesktop / XDG Standards
-    env.insert("XDG_SESSION_TYPE".to_string(), session_type.to_string());
+    env.insert("XDG_SESSION_TYPE".to_string(), opts.session_type.to_string());
     env.insert("XDG_SESSION_CLASS".to_string(), "user".to_string());
-    if let Some(names) = desktop_names {
+    if let Some(names) = opts.desktop_names {
         env.insert("XDG_CURRENT_DESKTOP".to_string(), names.to_string());
     }
 
     // 3. Merged PAM Environment
-    for (k, v) in pam_env {
+    for (k, v) in opts.pam_env {
         env.insert(k.clone(), v.clone());
     }
 
     // 4. Environment Profile Sourcing
-    source_environment_files(&mut env, system_sources, home_dir, user_sources);
+    source_environment_files(&mut env, opts.system_sources, opts.home_dir, opts.user_sources);
 
     // 5. Optional Display Variable
-    if let Some(disp) = display {
+    if let Some(disp) = opts.display {
         env.insert("DISPLAY".to_string(), disp.to_string());
     }
 
@@ -163,47 +166,42 @@ pub fn build_exec_command(
     }
 }
 
-pub fn launch_session(
-    user: &str,
-    uid: u32,
-    gid: u32,
-    env: &HashMap<String, String>,
-    exec_args: &[String],
-    is_xorg: bool,
-    vt: Option<c_int>,
-    user_shell: &str,
-    bypass_shell_login: bool,
-) -> Result<(), String> {
-    if is_xorg {
-        launch_xorg(user, uid, gid, env, exec_args, vt, user_shell, bypass_shell_login)
+#[derive(Debug)]
+pub struct LaunchContext<'a> {
+    pub user: &'a str,
+    pub uid: u32,
+    pub gid: u32,
+    pub env: &'a HashMap<String, String>,
+    pub exec_args: &'a [String],
+    pub is_xorg: bool,
+    pub vt: Option<c_int>,
+    pub user_shell: &'a str,
+    pub bypass_shell_login: bool,
+}
+
+pub fn launch_session(ctx: &LaunchContext) -> Result<(), String> {
+    if ctx.is_xorg {
+        launch_xorg(ctx)
     } else {
-        launch_direct(user, uid, gid, env, exec_args, user_shell, bypass_shell_login)
+        launch_direct(ctx)
     }
 }
 
-fn launch_direct(
-    user: &str,
-    uid: u32,
-    gid: u32,
-    env: &HashMap<String, String>,
-    exec_args: &[String],
-    user_shell: &str,
-    bypass_shell_login: bool,
-) -> Result<(), String> {
+fn launch_direct(ctx: &LaunchContext) -> Result<(), String> {
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {
             let pid = getpid();
             let _ = setpgid(pid, pid);
-            if let Err(e) = drop_privileges(user, uid, gid) {
+            if let Err(e) = drop_privileges(ctx.user, ctx.uid, ctx.gid) {
                 eprintln!("Failed to drop privileges: {}", e);
                 std::process::exit(1);
             }
 
-            let (prog, args) = build_exec_command(exec_args, user_shell, bypass_shell_login);
+            let (prog, args) = build_exec_command(ctx.exec_args, ctx.user_shell, ctx.bypass_shell_login);
 
             let mut cmd = Command::new(&prog);
             cmd.args(&args);
-            cmd.envs(env);
+            cmd.envs(ctx.env);
             
             let err = cmd.exec();
             eprintln!("Failed to exec: {}", err);
@@ -221,17 +219,8 @@ fn launch_direct(
     }
 }
 
-fn launch_xorg(
-    user: &str,
-    uid: u32,
-    gid: u32,
-    env: &HashMap<String, String>,
-    exec_args: &[String],
-    vt: Option<c_int>,
-    user_shell: &str,
-    bypass_shell_login: bool,
-) -> Result<(), String> {
-    let vt = vt.ok_or_else(|| "Xorg requires a VT number (none provided)".to_string())?;
+fn launch_xorg(ctx: &LaunchContext) -> Result<(), String> {
+    let vt = ctx.vt.ok_or_else(|| "Xorg requires a VT number (none provided)".to_string())?;
 
     // Create pipe for displayfd
     let (pipe_read, pipe_write) = nix::unistd::pipe().map_err(|e| format!("Pipe failed: {}", e))?;
@@ -260,7 +249,7 @@ fn launch_xorg(
             let display_str = std::str::from_utf8(&display_buf[..n]).unwrap().trim();
             let display = format!(":{}", display_str);
 
-            let mut session_env = env.clone();
+            let mut session_env = ctx.env.clone();
             session_env.insert("DISPLAY".to_string(), display);
 
             match unsafe { fork() } {
@@ -268,12 +257,12 @@ fn launch_xorg(
                     // Session child
                     let pid = getpid();
                     let _ = setpgid(pid, pid);
-                    if let Err(e) = drop_privileges(user, uid, gid) {
+                    if let Err(e) = drop_privileges(ctx.user, ctx.uid, ctx.gid) {
                         eprintln!("Failed to drop privileges: {}", e);
                         std::process::exit(1);
                     }
 
-                    let (prog, args) = build_exec_command(exec_args, user_shell, bypass_shell_login);
+                    let (prog, args) = build_exec_command(ctx.exec_args, ctx.user_shell, ctx.bypass_shell_login);
 
                     let mut cmd = Command::new(&prog);
                     cmd.args(&args);
@@ -318,7 +307,18 @@ mod tests {
         pam_env.insert("PAM_VAR".to_string(), "pam_val".to_string());
         pam_env.insert("PATH".to_string(), "/custom/path".to_string());
 
-        let env = assemble_environment(&pam_env, "alice", "/home/alice", "/bin/zsh", "wayland", None, None, &[], &[]);
+        let opts = EnvironmentOptions {
+            pam_env: &pam_env,
+            username: "alice",
+            home_dir: "/home/alice",
+            shell: "/bin/zsh",
+            session_type: "wayland",
+            display: None,
+            desktop_names: None,
+            system_sources: &[],
+            user_sources: &[],
+        };
+        let env = assemble_environment(&opts);
 
         assert_eq!(env.get("USER").map(|s| s.as_str()), Some("alice"));
         assert_eq!(env.get("LOGNAME").map(|s| s.as_str()), Some("alice"));
@@ -334,17 +334,18 @@ mod tests {
     #[test]
     fn test_assemble_environment_xdg_current_desktop() {
         let pam_env = HashMap::new();
-        let env = assemble_environment(
-            &pam_env,
-            "bob",
-            "/home/bob",
-            "/bin/bash",
-            "wayland",
-            None,
-            Some("Sway:Wayland"),
-            &[],
-            &[],
-        );
+        let opts = EnvironmentOptions {
+            pam_env: &pam_env,
+            username: "bob",
+            home_dir: "/home/bob",
+            shell: "/bin/bash",
+            session_type: "wayland",
+            display: None,
+            desktop_names: Some("Sway:Wayland"),
+            system_sources: &[],
+            user_sources: &[],
+        };
+        let env = assemble_environment(&opts);
         assert_eq!(env.get("XDG_CURRENT_DESKTOP").map(|s| s.as_str()), Some("Sway:Wayland"));
     }
 

@@ -1,4 +1,3 @@
-use log::debug;
 use uzers::all_users;
 use uzers::os::unix::UserExt;
 
