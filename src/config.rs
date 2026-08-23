@@ -344,8 +344,7 @@ impl Config {
         })
     }
 
-    pub fn load(args: &crate::Args) -> (Self, Option<String>) {
-        let conf_path = &args.conf_path;
+    pub fn load_with_overrides(conf_path: &str, cli_overrides: Option<toml::Table>) -> (Self, Option<String>) {
         let (mut config, err_msg) = if Path::new(conf_path).exists() {
             match Self::from_file(conf_path) {
                 Ok(cfg) => (cfg, None),
@@ -363,23 +362,15 @@ impl Config {
         };
 
         config.apply_env_overrides();
-        config.apply_cli_overrides(args);
+        if let Some(overrides) = cli_overrides {
+            config.apply_table_overrides(overrides);
+        }
 
         (config, err_msg)
     }
 
-    pub fn apply_cli_overrides(&mut self, args: &crate::Args) {
-        if let Some(ref file) = args.logging_file
-            && !file.is_empty()
-        {
-            self.logging.file = file.clone();
-        }
-
-        if let Some(ref level) = args.logging_level
-            && !level.is_empty()
-        {
-            self.logging.level = level.clone();
-        }
+    pub fn load(args: &crate::Args, cli_overrides: Option<toml::Table>) -> (Self, Option<String>) {
+        Self::load_with_overrides(&args.conf_path, cli_overrides)
     }
 
     pub fn generate_default_toml() -> String {
@@ -585,15 +576,28 @@ refresh_rate = 150
             std::env::set_var("LIDM_BEHAVIOR_REFRESH_RATE", "300");
         }
 
+        let raw_args = vec![
+            "lidm",
+            "-c",
+            config_path.to_str().unwrap(),
+            "--logging-file",
+            "/tmp/cli.log",
+            "--logging-level",
+            "error",
+            "--behavior-refresh-rate",
+            "450",
+            "--behavior-box-type",
+            "rounded",
+        ];
+
+        let (cli_overrides, _remaining) = Config::extract_cli_overrides(raw_args);
         let args = crate::Args {
             command: None,
             vt: None,
-            logging_file: Some("/tmp/cli.log".to_string()),
-            logging_level: Some("error".to_string()),
             conf_path: config_path.to_str().unwrap().to_string(),
         };
 
-        let (config, err_opt) = Config::load(&args);
+        let (config, err_opt) = Config::load(&args, Some(cli_overrides));
         assert!(err_opt.is_none());
 
         // CLI overrides TOML
@@ -602,11 +606,12 @@ refresh_rate = 150
         // CLI overrides Env and TOML
         assert_eq!(config.logging.level, "error");
 
+        // CLI overrides Env and TOML
+        assert_eq!(config.behavior.refresh_rate, 450);
+        assert_eq!(config.behavior.box_type, BoxType::Rounded);
+
         // TOML preserved when no Env or CLI set
         assert_eq!(config.auth.pam_service, "toml-pam");
-
-        // Env overrides TOML
-        assert_eq!(config.behavior.refresh_rate, 300);
 
         unsafe {
             std::env::remove_var("LIDM_LOGGING_LEVEL");
@@ -624,12 +629,10 @@ refresh_rate = 150
         let args = crate::Args {
             command: None,
             vt: None,
-            logging_file: None,
-            logging_level: None,
             conf_path: config_path.to_str().unwrap().to_string(),
         };
 
-        let (config, err) = Config::load(&args);
+        let (config, err) = Config::load(&args, None);
         assert!(err.is_some());
         assert_eq!(config.logging.file, "/tmp/lidm.log");
 

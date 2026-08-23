@@ -42,7 +42,8 @@ pub enum Commands {
         env!("VERGEN_RUSTC_SEMVER"),
         ")"
     ),
-    about = "LiDM: Lightweight Display Manager"
+    about = "LiDM: Lightweight Display Manager",
+    after_help = config::Config::generate_cli_help()
 )]
 pub struct Args {
     #[command(subcommand)]
@@ -59,12 +60,6 @@ pub struct Args {
         help = "Path to configuration file"
     )]
     pub conf_path: String,
-
-    #[arg(long = "logging-file", help = "Path to log file")]
-    pub logging_file: Option<String>,
-
-    #[arg(long = "logging-level", help = "Log level filter")]
-    pub logging_level: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,7 +197,8 @@ pub fn handle_login(
 }
 
 fn main() {
-    let args = Args::parse();
+    let (cli_overrides, remaining_args) = config::Config::extract_cli_overrides(std::env::args());
+    let args = Args::parse_from(remaining_args);
 
     if let Some(Commands::CopyConfig { ref dest }) = args.command {
         match config::Config::execute_copy_config(dest.as_deref()) {
@@ -230,7 +226,7 @@ fn main() {
 
         // Load config
         let conf_path = args.conf_path.clone();
-        let (config, config_err) = config::Config::load(&args);
+        let (config, config_err) = config::Config::load(&args, Some(cli_overrides.clone()));
 
         let _log_guard = match logging::initialize_logging(&config.logging, Some(console_buffer.clone())) {
             Ok(guard) => Some(guard),
