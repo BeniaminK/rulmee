@@ -8,7 +8,7 @@ Currently, `lidm` supports configuration via a TOML file and automatic environme
 
 This design introduces comprehensive CLI argument overrides (such as `--behavior-box-type`, `--behavior-refresh-rate`, etc.) using `clap-serde-derive`. This provides:
 1. **Single struct definition**: Configuration structs (`Behavior`, `AuthConfig`, etc.) are defined once with no duplicate structs.
-2. **Native `clap` `--help` support**: All flags, docstrings, and types appear automatically in `lidm --help`.
+2. **Native `clap` `--help` support**: All flags, docstrings, inferred enum values, and default values appear automatically in `lidm --help`.
 3. **Hierarchical Precedence**: Defaults < TOML file < Environment variables < CLI flags.
 
 ---
@@ -23,17 +23,28 @@ clap-serde-derive = "0.2"
 ```
 
 ### Struct Annotations in `src/config.rs`
-The configuration structures derive `ClapSerde` alongside `Serialize`, `Deserialize`, and `Default`:
+The configuration structures derive `ClapSerde` alongside `Serialize`, `Deserialize`, and `Default`. Type inference (such as `clap::ValueEnum` for `BoxType`) and default value display are handled automatically by `clap` and `clap-serde-derive`:
 
 ```rust
 use clap_serde_derive::ClapSerde;
 
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum BoxType {
+    #[default]
+    #[serde(alias = "plain", alias = "default")]
+    Border,
+    None,
+    Rounded,
+    Block,
+}
+
 #[derive(ClapSerde, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Behavior {
-    /// Border style: border, rounded, block, none
+    /// Border style
     #[default(BoxType::Border)]
-    #[arg(long = "behavior-box-type", value_enum)]
+    #[arg(long = "behavior-box-type")]
     pub box_type: BoxType,
 
     /// Include default shell option in session list
@@ -119,7 +130,7 @@ pub struct Args {
 
 ## Error Handling & Validation
 
-- `clap` validates argument types (integers, enum variants for `box_type`, etc.) during CLI parsing, printing clear help/usage messages on error.
+- `clap` validates argument types (integers, enum variants for `box_type`, etc.) during CLI parsing, printing clear help/usage messages on error with default values and allowed options.
 - Corrupted or invalid TOML files trigger a fallback to default values while preserving environment and CLI overrides.
 
 ---
@@ -129,6 +140,6 @@ pub struct Args {
 1. **Unit Tests**:
    - `test_cli_overrides_precedence`: Verify `Defaults < TOML < Env < CLI`.
    - `test_behavior_cli_flags`: Verify parsing and merging of all `Behavior` fields (`box_type`, `refresh_rate`, `bypass_shell_login`, etc.).
-   - `test_help_output`: Verify all `--behavior-...` flags appear in CLI help generation.
+   - `test_help_output`: Verify all `--behavior-...` flags appear in CLI help generation with their defaults.
 2. **Automated Verification**:
    - Run `cargo test` and ensure all tests pass.
