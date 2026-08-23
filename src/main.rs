@@ -3,21 +3,19 @@ mod colors;
 mod config;
 mod console;
 mod exec;
+mod legacy_ini;
 mod logging;
 mod session;
 mod sys;
 mod theme;
 mod ui;
-mod ui_adapter;
-mod ui_state;
 mod users;
 mod vt;
 mod launch_state;
 mod signal_handler;
 
 use crate::session::SessionType;
-use crate::ui::{UI, UIContext, UIResult};
-use crate::ui_state::LoginRequest;
+use crate::ui::{LoginRequest, UIContext, UIResult, UI};
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 use std::ffi::c_int;
@@ -247,14 +245,10 @@ fn main() {
             error!("{}", err);
         }
 
-        match args.vt {
-            Some(vt) => match vt::chvt(vt) {
-                Err(e) => {
-                    warn!("Warning: Could not switch to VT {}: {}", vt, e);
-                }
-                _ => (),
-            },
-            None => (),
+        if let Some(vt) = args.vt
+            && let Err(e) = vt::chvt(vt)
+        {
+            warn!("Warning: Could not switch to VT {}: {}", vt, e);
         }
 
         debug!("Config: {:?}", config);

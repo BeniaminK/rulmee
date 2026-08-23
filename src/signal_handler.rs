@@ -6,7 +6,7 @@ use signal_hook::iterator::Signals;
 use std::thread;
 
 pub fn setup_signal_handler() -> Result<(), String> {
-    let mut signals = Signals::new(&[SIGTERM, SIGINT])
+    let mut signals = Signals::new([SIGTERM, SIGINT])
         .map_err(|e| format!("Failed to register signal handlers: {}", e))?;
 
     thread::spawn(move || {
@@ -15,10 +15,8 @@ pub fn setup_signal_handler() -> Result<(), String> {
             if pgid > 0 {
                 let _ = kill(Pid::from_raw(-pgid), Signal::SIGTERM);
             }
-            if sig == SIGTERM || sig == SIGINT {
-                if pgid == 0 {
-                    std::process::exit(0);
-                }
+            if (sig == SIGTERM || sig == SIGINT) && pgid == 0 {
+                std::process::exit(0);
             }
         }
     });

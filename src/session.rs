@@ -29,101 +29,67 @@ const SOURCES: &[(SessionType, &str)] = &[
     (SessionType::Wayland, "/usr/local/share/wayland-sessions"),
 ];
 
+/// Parses a desktop entry `Exec` command line into separate arguments,
+/// handling single/double quotes, escape sequences, and stripping Freedesktop `%` field codes.
 pub fn parse_exec_string(exec: &str) -> Vec<String> {
     let mut args = Vec::new();
-    let mut current_arg = String::new();
-    let mut in_double_quote = false;
-    let mut in_single_quote = false;
-    let mut escaped = false;
-    let mut saw_quotes_for_arg = false;
+    let mut current = String::new();
+    let mut in_quote = None;
+    let mut has_token = false;
+    let mut chars = exec.chars().peekable();
 
-    let chars: Vec<char> = exec.chars().collect();
-    let mut i = 0;
-
-    while i < chars.len() {
-        let c = chars[i];
-
-        if escaped {
-            current_arg.push(c);
-            escaped = false;
-            i += 1;
-            continue;
-        }
-
-        if c == '\\' && !in_single_quote {
-            escaped = true;
-            i += 1;
-            continue;
-        }
-
-        if c == '"' && !in_single_quote {
-            in_double_quote = !in_double_quote;
-            saw_quotes_for_arg = true;
-            i += 1;
-            continue;
-        }
-
-        if c == '\'' && !in_double_quote {
-            in_single_quote = !in_single_quote;
-            saw_quotes_for_arg = true;
-            i += 1;
-            continue;
-        }
-
-        if (c == ' ' || c == '\t' || c == '\n') && !in_double_quote && !in_single_quote {
-            if !current_arg.is_empty() || saw_quotes_for_arg {
-                args.push(std::mem::take(&mut current_arg));
-                saw_quotes_for_arg = false;
-            }
-            i += 1;
-            continue;
-        }
-
-        if c == '%' && !in_double_quote && !in_single_quote {
-            if i + 1 < chars.len() {
-                let next = chars[i + 1];
-                if next == '%' {
-                    current_arg.push('%');
-                    i += 2;
-                    continue;
-                } else if next.is_ascii_alphanumeric() {
-                    // Drop field code (%f, %F, %u, %U, %i, %c, %k, etc.)
-                    i += 2;
-                    continue;
-                } else {
-                    // Non-specifier character (e.g. space, quote) after %: treat % as literal %
-                    current_arg.push('%');
-                    i += 1;
-                    continue;
+    while let Some(c) = chars.next() {
+        match (c, in_quote) {
+            ('\\', None) => {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                    has_token = true;
                 }
-            } else {
-                // Trailing % at EOF: treat % as literal %
-                current_arg.push('%');
-                i += 1;
-                continue;
+            }
+            ('"' | '\'', None) => {
+                in_quote = Some(c);
+                has_token = true;
+            }
+            (q, Some(active)) if q == active => {
+                in_quote = None;
+            }
+            (c, None) if c.is_whitespace() => {
+                if has_token || !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                    has_token = false;
+                }
+            }
+            ('%', None) => match chars.peek() {
+                Some('%') => {
+                    chars.next();
+                    current.push('%');
+                    has_token = true;
+                }
+                Some(&next) if next.is_ascii_alphanumeric() => {
+                    chars.next(); // Strip Freedesktop field code (%f, %u, etc.)
+                }
+                _ => {
+                    current.push('%');
+                    has_token = true;
+                }
+            },
+            (c, _) => {
+                current.push(c);
+                has_token = true;
             }
         }
-
-        current_arg.push(c);
-        i += 1;
     }
 
-    if !current_arg.is_empty() || saw_quotes_for_arg {
-        args.push(current_arg);
+    if has_token || !current.is_empty() {
+        args.push(current);
     }
 
     args
 }
 
-pub trait ApplicationEntryExt {
-    fn desktop_names(&self) -> Option<String>;
-}
-
-impl ApplicationEntryExt for ApplicationEntry {
-    fn desktop_names(&self) -> Option<String> {
-        self.get_string("DesktopNames")
-            .or_else(|| self.get_vec("DesktopNames").map(|v| v.join(";")))
-    }
+fn get_desktop_names(app: &ApplicationEntry) -> Option<String> {
+    app.get_string("DesktopNames")
+        .or_else(|| app.get_vec("DesktopNames").map(|v| v.join(";")))
 }
 
 pub fn get_available_sessions() -> Vec<Session> {
@@ -131,29 +97,33 @@ pub fn get_available_sessions() -> Vec<Session> {
 
     for (session_type, dir) in SOURCES {
         let path = std::path::Path::new(dir);
-        if !path.exists() {
+        let Ok(entries) = fs::read_dir(path) else {
             continue;
-        }
+        };
 
-        if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let fpath = entry.path();
-                if fpath.extension().and_then(|s| s.to_str()) == Some("desktop") {
-                    if let Ok(app) = ApplicationEntry::try_from_path(&fpath) {
-                        if app.should_show() {
-                            if let (Some(name), Some(exec)) = (app.name(), app.exec()) {
-                                let args = parse_exec_string(&exec);
-                                if !args.is_empty() {
-                                    sessions.push(Session {
-                                        name: name.to_string(),
-                                        exec: ExecType::Desktop(args),
-                                        session_type: *session_type,
-                                        desktop_names: app.desktop_names().map(String::from),
-                                    });
-                                }
-                            }
-                        }
-                    }
+        for entry in entries.flatten() {
+            let fpath = entry.path();
+            if fpath.extension().and_then(|s| s.to_str()) != Some("desktop") {
+                continue;
+            }
+
+            let Ok(app) = ApplicationEntry::try_from_path(&fpath) else {
+                continue;
+            };
+
+            if !app.should_show() {
+                continue;
+            }
+
+            if let (Some(name), Some(exec)) = (app.name(), app.exec()) {
+                let args = parse_exec_string(&exec);
+                if !args.is_empty() {
+                    sessions.push(Session {
+                        name: name.to_string(),
+                        exec: ExecType::Desktop(args),
+                        session_type: *session_type,
+                        desktop_names: get_desktop_names(&app),
+                    });
                 }
             }
         }

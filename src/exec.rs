@@ -25,45 +25,38 @@ pub fn drop_privileges(user: &str, uid: u32, gid: u32) -> Result<(), String> {
     Ok(())
 }
 
-pub fn parse_env_file<P: AsRef<std::path::Path>>(path: P) -> Vec<(String, String)> {
-    let mut pairs = Vec::new();
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return pairs;
-    };
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        let line = if line.starts_with("export")
-            && (line.chars().nth(6) == Some(' ') || line.chars().nth(6) == Some('\t'))
-        {
-            line[6..].trim_start()
-        } else {
-            line
-        };
-
-        if let Some((key, val)) = line.split_once('=') {
-            let key = key.trim();
-            let mut val = val.trim();
-
-            if key.is_empty() {
-                continue;
-            }
-
-            if (val.starts_with('"') && val.ends_with('"') && val.len() >= 2)
-                || (val.starts_with('\'') && val.ends_with('\'') && val.len() >= 2)
-            {
-                val = &val[1..val.len() - 1];
-            }
-
-            pairs.push((key.to_string(), val.to_string()));
-        }
+pub fn parse_env_line(line: &str) -> Option<(String, String)> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+        return None;
     }
 
-    pairs
+    let line = line
+        .strip_prefix("export")
+        .filter(|rest| rest.starts_with(|c: char| c.is_whitespace()))
+        .map(str::trim_start)
+        .unwrap_or(line);
+
+    let (key, val) = line.split_once('=')?;
+    let key = key.trim();
+    if key.is_empty() {
+        return None;
+    }
+
+    let val = val.trim();
+    let val = val
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .or_else(|| val.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+        .unwrap_or(val);
+
+    Some((key.to_string(), val.to_string()))
+}
+
+pub fn parse_env_file<P: AsRef<std::path::Path>>(path: P) -> Vec<(String, String)> {
+    std::fs::read_to_string(path)
+        .map(|content| content.lines().filter_map(parse_env_line).collect())
+        .unwrap_or_default()
 }
 
 pub fn source_environment_files(
@@ -73,8 +66,7 @@ pub fn source_environment_files(
     user_sources: &[String],
 ) {
     for path_str in system_sources {
-        let path = std::path::Path::new(path_str);
-        for (k, v) in parse_env_file(path) {
+        for (k, v) in parse_env_file(path_str) {
             env.insert(k, v);
         }
     }
@@ -82,8 +74,7 @@ pub fn source_environment_files(
     if !home_dir.is_empty() {
         let home_path = std::path::Path::new(home_dir);
         for rel_path in user_sources {
-            let path = home_path.join(rel_path);
-            for (k, v) in parse_env_file(path) {
+            for (k, v) in parse_env_file(home_path.join(rel_path)) {
                 env.insert(k, v);
             }
         }
@@ -179,6 +170,24 @@ pub struct LaunchContext<'a> {
     pub bypass_shell_login: bool,
 }
 
+fn exec_child(ctx: &LaunchContext, env: &HashMap<String, String>) -> ! {
+    let pid = getpid();
+    let _ = setpgid(pid, pid);
+    if let Err(e) = drop_privileges(ctx.user, ctx.uid, ctx.gid) {
+        eprintln!("Failed to drop privileges: {}", e);
+        std::process::exit(1);
+    }
+
+    let (prog, args) = build_exec_command(ctx.exec_args, ctx.user_shell, ctx.bypass_shell_login);
+    let mut cmd = Command::new(&prog);
+    cmd.args(&args);
+    cmd.envs(env);
+
+    let err = cmd.exec();
+    eprintln!("Failed to exec: {}", err);
+    std::process::exit(1);
+}
+
 pub fn launch_session(ctx: &LaunchContext) -> Result<(), String> {
     if ctx.is_xorg {
         launch_xorg(ctx)
@@ -189,24 +198,7 @@ pub fn launch_session(ctx: &LaunchContext) -> Result<(), String> {
 
 fn launch_direct(ctx: &LaunchContext) -> Result<(), String> {
     match unsafe { fork() } {
-        Ok(ForkResult::Child) => {
-            let pid = getpid();
-            let _ = setpgid(pid, pid);
-            if let Err(e) = drop_privileges(ctx.user, ctx.uid, ctx.gid) {
-                eprintln!("Failed to drop privileges: {}", e);
-                std::process::exit(1);
-            }
-
-            let (prog, args) = build_exec_command(ctx.exec_args, ctx.user_shell, ctx.bypass_shell_login);
-
-            let mut cmd = Command::new(&prog);
-            cmd.args(&args);
-            cmd.envs(ctx.env);
-            
-            let err = cmd.exec();
-            eprintln!("Failed to exec: {}", err);
-            std::process::exit(1);
-        }
+        Ok(ForkResult::Child) => exec_child(ctx, ctx.env),
         Ok(ForkResult::Parent { child }) => {
             let _ = setpgid(child, child);
             set_active_child_pgid(child.as_raw());
@@ -221,22 +213,19 @@ fn launch_direct(ctx: &LaunchContext) -> Result<(), String> {
 
 fn launch_xorg(ctx: &LaunchContext) -> Result<(), String> {
     let vt = ctx.vt.ok_or_else(|| "Xorg requires a VT number (none provided)".to_string())?;
-
-    // Create pipe for displayfd
     let (pipe_read, pipe_write) = nix::unistd::pipe().map_err(|e| format!("Pipe failed: {}", e))?;
 
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {
-            // Xorg server child
             close(pipe_read.as_raw_fd()).unwrap();
             let display_fd = pipe_write.as_raw_fd();
             let pid = getpid();
             let _ = setpgid(pid, pid);
-            
+
             let mut cmd = Command::new("Xorg");
             cmd.arg("-displayfd").arg(display_fd.to_string());
             cmd.arg(format!("vt{}", vt));
-            
+
             let err = cmd.exec();
             eprintln!("Failed to exec Xorg: {}", err);
             std::process::exit(1);
@@ -253,29 +242,10 @@ fn launch_xorg(ctx: &LaunchContext) -> Result<(), String> {
             session_env.insert("DISPLAY".to_string(), display);
 
             match unsafe { fork() } {
-                Ok(ForkResult::Child) => {
-                    // Session child
-                    let pid = getpid();
-                    let _ = setpgid(pid, pid);
-                    if let Err(e) = drop_privileges(ctx.user, ctx.uid, ctx.gid) {
-                        eprintln!("Failed to drop privileges: {}", e);
-                        std::process::exit(1);
-                    }
-
-                    let (prog, args) = build_exec_command(ctx.exec_args, ctx.user_shell, ctx.bypass_shell_login);
-
-                    let mut cmd = Command::new(&prog);
-                    cmd.args(&args);
-                    cmd.envs(session_env);
-                    
-                    let err = cmd.exec();
-                    eprintln!("Failed to exec session: {}", err);
-                    std::process::exit(1);
-                }
+                Ok(ForkResult::Child) => exec_child(ctx, &session_env),
                 Ok(ForkResult::Parent { child: session_pid }) => {
                     let _ = setpgid(session_pid, session_pid);
                     set_active_child_pgid(session_pid.as_raw());
-                    // Wait for either Xorg or Session to die
                     let mut status: i32 = 0;
                     loop {
                         let pid = unsafe { libc::waitpid(-1, &mut status, 0) };
@@ -451,6 +421,17 @@ INVALID_LINE_NO_EQUALS
         let result = drop_privileges("user\0invalid", 1000, 1000);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid username string"));
+    }
+
+    #[test]
+    fn test_parse_env_line() {
+        assert_eq!(parse_env_line("# comment"), None);
+        assert_eq!(parse_env_line("   "), None);
+        assert_eq!(parse_env_line("FOO=bar"), Some(("FOO".to_string(), "bar".to_string())));
+        assert_eq!(parse_env_line("export FOO=\"bar\""), Some(("FOO".to_string(), "bar".to_string())));
+        assert_eq!(parse_env_line("export FOO='bar'"), Some(("FOO".to_string(), "bar".to_string())));
+        assert_eq!(parse_env_line("export\tFOO=bar"), Some(("FOO".to_string(), "bar".to_string())));
+        assert_eq!(parse_env_line("INVALID"), None);
     }
 }
 

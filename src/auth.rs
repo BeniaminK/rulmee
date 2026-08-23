@@ -46,10 +46,10 @@ impl CapturingConversation {
 
 impl ConversationHandler for CapturingConversation {
     fn init(&mut self, default_user: Option<&str>) {
-        if let Some(user) = default_user {
-            if self.username.is_empty() {
-                self.username = user.to_string();
-            }
+        if let Some(user) = default_user
+            && self.username.is_empty()
+        {
+            self.username = user.to_string();
         }
     }
 

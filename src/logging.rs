@@ -1,9 +1,8 @@
 use std::fs::OpenOptions;
 use std::io::{self, Write};
-use std::sync::Arc;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
-    fmt,
+    fmt::{self, writer::MakeWriter},
     layer::SubscriberExt,
     util::SubscriberInitExt,
     EnvFilter,
@@ -13,21 +12,12 @@ use crate::console::ConsoleBuffer;
 
 const DEFAULT_LOG_FILE: &str = "/tmp/lidm.log";
 
+#[derive(Clone)]
 struct ConsoleBufferWriter {
     buffer: ConsoleBuffer,
 }
 
 impl Write for ConsoleBufferWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        (&*self).write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        (&*self).flush()
-    }
-}
-
-impl Write for &ConsoleBufferWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let text = String::from_utf8_lossy(buf);
         let mut lines = self.buffer.lock().unwrap();
@@ -45,21 +35,19 @@ impl Write for &ConsoleBufferWriter {
     }
 }
 
+impl<'a> MakeWriter<'a> for ConsoleBufferWriter {
+    type Writer = ConsoleBufferWriter;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+#[derive(Clone, Copy)]
 struct SystemdPipeWriter {
     fd: Option<std::os::unix::io::RawFd>,
 }
 
 impl Write for SystemdPipeWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        (&*self).write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        (&*self).flush()
-    }
-}
-
-impl Write for &SystemdPipeWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if let Some(fd) = self.fd {
             unsafe {
@@ -74,11 +62,18 @@ impl Write for &SystemdPipeWriter {
     }
 }
 
+impl<'a> MakeWriter<'a> for SystemdPipeWriter {
+    type Writer = SystemdPipeWriter;
+    fn make_writer(&'a self) -> Self::Writer {
+        *self
+    }
+}
+
 pub fn resolve_log_path(cli_log_file: Option<&str>) -> String {
-    if let Some(cli_path) = cli_log_file {
-        if !cli_path.trim().is_empty() {
-            return cli_path.to_string();
-        }
+    if let Some(cli_path) = cli_log_file
+        && !cli_path.trim().is_empty()
+    {
+        return cli_path.to_string();
     }
     DEFAULT_LOG_FILE.to_string()
 }
@@ -107,9 +102,8 @@ pub fn initialize_logging(
         .compact();
 
     let console_layer = console_buffer.map(|buffer| {
-        let console_writer = ConsoleBufferWriter { buffer };
         fmt::layer()
-            .with_writer(Arc::new(console_writer))
+            .with_writer(ConsoleBufferWriter { buffer })
             .with_ansi(false)
             .compact()
     });
@@ -118,7 +112,7 @@ pub fn initialize_logging(
         let systemd_fd = nix::unistd::dup(2).ok();
         Some(
             fmt::layer()
-                .with_writer(Arc::new(SystemdPipeWriter { fd: systemd_fd }))
+                .with_writer(SystemdPipeWriter { fd: systemd_fd })
                 .with_ansi(false)
                 .compact(),
         )
@@ -140,7 +134,7 @@ pub fn initialize_logging(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_console_buffer_writer_ring_buffer() {

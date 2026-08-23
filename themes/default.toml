@@ -86,13 +86,13 @@ ellipsis = "…"
 [behavior]
 box_type = "border"
 include_defshell = true
-show_console = false
+show_console = true
 source = []
 user_source = []
 timefmt = "%Y-%m-%d %H:%M:%S"
 refresh_rate = 100
 bypass_shell_login = false
-show_theme = false
+show_theme = true
 
 [logging]
 file = "/tmp/lidm.log"

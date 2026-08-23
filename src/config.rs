@@ -143,15 +143,23 @@ pub struct Config {
 }
 
 impl Config {
-    fn parse<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-        let content = std::fs::read_to_string(path)?;
-        let deserializer = toml::Deserializer::parse(&content)?;
+    /// Factory constructor: Parses a TOML string into a `Config`, warning on unknown fields.
+    pub fn from_toml_str(content: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let deserializer = toml::Deserializer::parse(content)?;
         let parsed_config: Config = serde_ignored::deserialize(deserializer, |path| {
             log::warn!("Unknown configuration field ignored: {}", path);
-        })?; 
-        *self = parsed_config;
-        Ok(())
+        })?;
+        Ok(parsed_config)
+    }
+
+    /// Factory constructor: Reads and parses a configuration file from a filesystem path.
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+        let content = std::fs::read_to_string(path)?;
+        Self::from_toml_str(&content)
     }
 
     /// Scan environment variables matching `LIDM_<SECTION>_<KEY>` and apply them
@@ -217,21 +225,22 @@ impl Config {
     }
 
     pub fn load(args: &crate::Args) -> (Self, Option<String>) {
-        let mut config = Config::default();
-        let mut err_msg = None;
-
         let conf_path = &args.conf_path;
-        if Path::new(conf_path).exists() {
-            if let Err(e) = config.parse(conf_path) {
-                let msg = format!(
-                    "Failed to parse config from '{}': {}. Falling back to default configuration.",
-                    conf_path, e
-                );
-                eprintln!("{}", msg);
-                err_msg = Some(msg);
-                config = Config::default();
+        let (mut config, err_msg) = if Path::new(conf_path).exists() {
+            match Self::from_file(conf_path) {
+                Ok(cfg) => (cfg, None),
+                Err(e) => {
+                    let msg = format!(
+                        "Failed to parse config from '{}': {}. Falling back to default configuration.",
+                        conf_path, e
+                    );
+                    eprintln!("{}", msg);
+                    (Self::default(), Some(msg))
+                }
             }
-        }
+        } else {
+            (Self::default(), None)
+        };
 
         config.apply_env_overrides();
         config.apply_cli_overrides(args);
@@ -240,16 +249,16 @@ impl Config {
     }
 
     pub fn apply_cli_overrides(&mut self, args: &crate::Args) {
-        if let Some(ref file) = args.logging_file {
-            if !file.is_empty() {
-                self.logging.file = file.clone();
-            }
+        if let Some(ref file) = args.logging_file
+            && !file.is_empty()
+        {
+            self.logging.file = file.clone();
         }
 
-        if let Some(ref level) = args.logging_level {
-            if !level.is_empty() {
-                self.logging.level = level.clone();
-            }
+        if let Some(ref level) = args.logging_level
+            && !level.is_empty()
+        {
+            self.logging.level = level.clone();
         }
     }
 
@@ -266,16 +275,16 @@ impl Config {
             }
         }
 
-        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-            if !xdg.trim().is_empty() {
-                return std::path::PathBuf::from(xdg).join("lidm").join("default.toml");
-            }
+        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME")
+            && !xdg.trim().is_empty()
+        {
+            return std::path::PathBuf::from(xdg).join("lidm").join("default.toml");
         }
 
-        if let Ok(home) = std::env::var("HOME") {
-            if !home.trim().is_empty() {
-                return std::path::PathBuf::from(home).join(".config").join("lidm").join("default.toml");
-            }
+        if let Ok(home) = std::env::var("HOME")
+            && !home.trim().is_empty()
+        {
+            return std::path::PathBuf::from(home).join(".config").join("lidm").join("default.toml");
         }
 
         std::path::PathBuf::from("/etc/lidm/default.toml")
@@ -403,7 +412,7 @@ f_fido = "yubikey"
         let config = Config::default();
         assert_eq!(config.logging.file, "/tmp/lidm.log");
         assert_eq!(config.logging.level, "debug");
-        assert_eq!(config.logging.stdout, false);
+        assert!(!config.logging.stdout);
         assert_eq!(config.auth.pam_service, "login");
     }
 
@@ -421,7 +430,7 @@ f_fido = "yubikey"
         config.apply_env_overrides();
 
         assert_eq!(config.logging.level, "warn");
-        assert_eq!(config.logging.stdout, true);
+        assert!(config.logging.stdout);
         assert_eq!(config.auth.pam_service, "custom-pam");
         assert_eq!(config.behavior.refresh_rate, 250);
 
@@ -575,6 +584,22 @@ box_type = "block""#).unwrap();
         assert!(content.contains("[logging]"));
 
         let _ = std::fs::remove_dir_all(temp_dir.join("lidm_test_copy_config"));
+    }
+
+    #[test]
+    fn test_config_from_toml_str_factory() {
+        let toml_str = r#"
+[behavior]
+box_type = "block"
+refresh_rate = 300
+
+[auth]
+pam_service = "gdm"
+"#;
+        let cfg = Config::from_toml_str(toml_str).unwrap();
+        assert_eq!(cfg.behavior.box_type, BoxType::Block);
+        assert_eq!(cfg.behavior.refresh_rate, 300);
+        assert_eq!(cfg.auth.pam_service, "gdm");
     }
 }
 

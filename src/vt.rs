@@ -28,19 +28,15 @@ pub fn chvt(n: c_int) -> io::Result<()> {
             let mut kbtype: i32 = 0;
             // KDGKBTYPE returns the keyboard type. We check if it's < 3 as in the C version.
             unsafe {
-                if kd_gkbtype(fd.as_raw_fd(), &mut kbtype as *mut i32 as i32).is_ok() && kbtype < 3
+                if kd_gkbtype(fd.as_raw_fd(), &mut kbtype as *mut i32 as i32).is_ok()
+                    && kbtype < 3
+                    && vt_activate(fd.as_raw_fd(), n).is_ok()
+                    && vt_waitactive(fd.as_raw_fd(), n).is_ok()
                 {
-                    if vt_activate(fd.as_raw_fd(), n).is_ok()
-                        && vt_waitactive(fd.as_raw_fd(), n).is_ok()
-                    {
-                        return Ok(());
-                    }
+                    return Ok(());
                 }
             }
         }
     }
-    Err(io::Error::new(
-        io::ErrorKind::Other,
-        "Could not activate VT",
-    ))
+    Err(io::Error::other("Could not activate VT"))
 }

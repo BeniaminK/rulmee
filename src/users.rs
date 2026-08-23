@@ -24,8 +24,8 @@ pub fn get_human_users() -> Vec<LocalUser> {
                 first_part.to_string()
             };
             users.push(LocalUser {
-                username: username,
-                display_name: display_name,
+                username,
+                display_name,
                 shell: user.shell().to_string_lossy().to_string(),
             });
         }

@@ -27,7 +27,7 @@ impl ConsoleInterceptor {
     /// via dup2, and spawns a background thread to read captured messages.
     pub fn intercept(buffer: ConsoleBuffer) -> io::Result<Self> {
         let pty = openpty(None, None)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("openpty: {}", e)))?;
+            .map_err(|e| io::Error::other(format!("openpty: {}", e)))?;
 
         let slave_fd = pty.slave.as_raw_fd();
 
