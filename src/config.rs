@@ -309,6 +309,41 @@ impl Config {
         (cli_table, remaining)
     }
 
+    pub fn generate_cli_help() -> &'static str {
+        static HELP: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        HELP.get_or_init(|| {
+            let default_val = toml::Value::try_from(&Config::default())
+                .unwrap_or(toml::Value::Table(toml::Table::new()));
+            let mut out = String::from(
+                "Configuration Overrides:\n  Any setting can be overridden via --<section>-<key> <value> or LIDM_<SECTION>_<KEY>=<value>.\n\n",
+            );
+
+            let section_order = ["behavior", "auth", "logging", "functions", "strings", "colors"];
+
+            if let toml::Value::Table(sections) = default_val {
+                for sec_name in section_order {
+                    if let Some(toml::Value::Table(keys)) = sections.get(sec_name) {
+                        out.push_str(&format!("  [{}]:\n", sec_name));
+                        for (k, v) in keys {
+                            let flag_name = format!("--{}-{}", sec_name, k.replace('_', "-"));
+                            let default_display = match v {
+                                toml::Value::String(s) => format!("\"{}\"", s),
+                                toml::Value::Integer(i) => i.to_string(),
+                                toml::Value::Float(f) => f.to_string(),
+                                toml::Value::Boolean(b) => b.to_string(),
+                                toml::Value::Array(a) => format!("{:?}", a),
+                                _ => format!("{}", v),
+                            };
+                            out.push_str(&format!("    {:<38} [default: {}]\n", flag_name, default_display));
+                        }
+                        out.push('\n');
+                    }
+                }
+            }
+            out
+        })
+    }
+
     pub fn load(args: &crate::Args) -> (Self, Option<String>) {
         let conf_path = &args.conf_path;
         let (mut config, err_msg) = if Path::new(conf_path).exists() {
@@ -753,7 +788,18 @@ pam_service = "gdm"
         assert_eq!(config.behavior.refresh_rate, 999);
         assert_eq!(config.behavior.box_type, BoxType::Block);
     }
+
+    #[test]
+    fn test_generate_cli_help_contains_options() {
+        let help_text = Config::generate_cli_help();
+        assert!(help_text.contains("Configuration Overrides:"));
+        assert!(help_text.contains("--behavior-box-type"));
+        assert!(help_text.contains("--behavior-refresh-rate"));
+        assert!(help_text.contains("--auth-pam-service"));
+        assert!(help_text.contains("[default: 100]"));
+    }
 }
+
 
 
 
