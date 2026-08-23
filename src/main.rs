@@ -449,5 +449,54 @@ mod tests {
         assert_eq!(ctx.vt, Some(7));
         assert!(!ctx.bypass_shell_login);
     }
+
+    #[test]
+    fn test_full_cli_args_parsing_and_config_apply() {
+        let input_args = vec![
+            "lidm",
+            "--behavior-box-type", "block",
+            "--behavior-refresh-rate", "450",
+            "--behavior_bypass_shell_login", "true",
+            "--behavior-show-console",
+            "--logging-level", "warn",
+            "--auth-pam-service", "test-pam",
+            "--strings-f-poweroff", "shutdown",
+            "-c", "/nonexistent.toml",
+            "3",
+        ];
+
+        let (overrides, remaining) = config::Config::extract_cli_overrides(input_args);
+        let parsed_args = Args::try_parse_from(remaining).unwrap();
+
+        assert_eq!(parsed_args.vt, Some(3));
+        assert_eq!(parsed_args.conf_path, "/nonexistent.toml");
+
+        let (config, _) = config::Config::load(&parsed_args, Some(overrides));
+        assert_eq!(config.behavior.box_type, config::BoxType::Block);
+        assert_eq!(config.behavior.refresh_rate, 450);
+        assert!(config.behavior.bypass_shell_login);
+        assert!(config.behavior.show_console);
+        assert_eq!(config.logging.level, "warn");
+        assert_eq!(config.auth.pam_service, "test-pam");
+        assert_eq!(config.strings.f_poweroff, "shutdown");
+    }
+
+    #[test]
+    fn test_cli_help_rendering() {
+        use clap::CommandFactory;
+        let mut cmd = Args::command();
+        let mut help_buf = Vec::new();
+        cmd.write_help(&mut help_buf).unwrap();
+        let help_str = String::from_utf8(help_buf).unwrap();
+
+        assert!(help_str.contains("Configuration Overrides:"));
+        assert!(help_str.contains("--behavior-box-type"));
+        assert!(help_str.contains("--behavior-refresh-rate"));
+        assert!(help_str.contains("--behavior-show-console"));
+        assert!(help_str.contains("--auth-pam-service"));
+        assert!(help_str.contains("--logging-file"));
+        assert!(help_str.contains("[default: 100]"));
+    }
 }
+
 
