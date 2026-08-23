@@ -1,290 +1,292 @@
-# CLI Configuration Overrides Implementation Plan
+# Dynamic CLI Configuration Overrides Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement full command-line configuration overrides (such as `--behavior-box-type`, `--behavior-refresh-rate`, etc.) using a single struct definition and native `clap` `--help` with automatic default and enum display.
+**Goal:** Implement dynamic command-line configuration overrides (e.g. `--behavior-box-type`, `--behavior_refresh_rate`, `--auth-pam-service`, etc.) with zero struct annotations/repetition, hierarchical precedence, and auto-generated `--help` displaying all options and defaults.
 
-**Architecture:** Utilize `clap-serde-derive` on `Config` and its sub-structs (`Behavior`, `AuthConfig`, `LoggingConfig`, `Functions`, `Strings`, `Colors`). In `src/main.rs`, flatten `<Config as ClapSerde>::Opt` into `Args`, and merge CLI options on top of environment variables and TOML configuration in `Config::load`.
+**Architecture:** Add dynamic CLI override parsing in `src/config.rs` that extracts `--<section>-<key>` / `--<section>_<key>` flags and merges them into the TOML table (matching the environment variable pipeline). Generate dynamic `after_help` text for `clap` from `Config::default()`.
 
-**Tech Stack:** Rust (edition 2024), `clap` 4.5, `clap-serde-derive` 0.2, `serde` 1.0, `toml` 1.1.
+**Tech Stack:** Rust (edition 2024), `clap` 4.5, `serde` 1.0, `toml` 1.1.
 
 ## Global Constraints
 
-- Define configuration structs once without duplication.
-- CLI flags for the behavior section must use the prefix `--behavior-<field>` (e.g. `--behavior-box-type`, `--behavior-refresh-rate`).
-- Inferred enum parsing from `BoxType: clap::ValueEnum` without manual `value_enum` attributes.
-- Native `--help` displays default values and valid enum choices.
-- Hierarchical precedence: Defaults < TOML file < Environment variables (`LIDM_...`) < CLI flags.
+- Do NOT add any struct annotations, attributes, or duplicate structs. `Behavior`, `AuthConfig`, etc. remain clean.
+- Support both kebab-case (`--behavior-box-type`) and snake_case (`--behavior_box_type`), with `=` or space separation.
+- Support boolean flags without explicit value (e.g. `--behavior-show-console` sets to `true`).
+- Dynamic `--help` displays all sections, flags, and default values.
+- Precedence: Defaults < TOML < Environment variables < CLI overrides.
 
 ---
 
-### Task 1: Add Dependency and Configure `Cargo.toml`
+### Task 1: Implement Dynamic CLI Override Parsing in `src/config.rs`
 
 **Files:**
-- Modify: `Cargo.toml:20-25`
+- Modify: `src/config.rs`
 
 **Interfaces:**
-- Produces: `clap-serde-derive` crate available for deriving `ClapSerde`.
+- Produces:
+  - `pub fn extract_cli_overrides<I, T>(args: I) -> (toml::Table, Vec<String>)`
+  - `pub fn apply_table_overrides(&mut self, table: toml::Table)`
 
-- [ ] **Step 1: Update Cargo.toml dependencies**
-
-Add `clap-serde-derive = "0.2"` to `Cargo.toml` under `[dependencies]`.
-
-```toml
-clap = { version = "4.5", features = ["derive", "env"] }
-clap-serde-derive = "0.2"
-```
-
-- [ ] **Step 2: Verify dependency resolution**
-
-Run: `cargo check`
-Expected: PASS (resolves `clap-serde-derive` and compiles without errors).
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add Cargo.toml Cargo.lock
-git commit -m "build: add clap-serde-derive dependency"
-```
-
----
-
-### Task 2: Annotate Configuration Structs in `src/config.rs`
-
-**Files:**
-- Modify: `src/config.rs:1-150`
-
-**Interfaces:**
-- Consumes: `clap_serde_derive::ClapSerde`, `clap::ValueEnum`
-- Produces: `Config`, `Behavior`, `AuthConfig`, `LoggingConfig`, `Functions`, `Strings`, `Colors` with `ClapSerde` implementations and `<Config as ClapSerde>::Opt`.
-
-- [ ] **Step 1: Write failing unit test for `ClapSerde` parsing of `Behavior`**
+- [ ] **Step 1: Write failing unit tests for `extract_cli_overrides`**
 
 In `src/config.rs` `tests` module:
 ```rust
 #[test]
-fn test_behavior_clap_serde_override() {
-    use clap_serde_derive::ClapSerde;
-    let mut config = Config::default();
-    let opt = <Config as ClapSerde>::Opt::default();
-    // Verify default Opt has None for fields before override
-    assert!(opt.behavior.refresh_rate.is_none());
+fn test_extract_cli_overrides_basic() {
+    let raw_args = vec![
+        "lidm".to_string(),
+        "-c".to_string(),
+        "/etc/lidm/default.toml".to_string(),
+        "--behavior-box-type".to_string(),
+        "rounded".to_string(),
+        "--behavior_refresh_rate=250".to_string(),
+        "--behavior-show-console".to_string(),
+        "--auth-pam-service".to_string(),
+        "custom-pam".to_string(),
+        "2".to_string(),
+    ];
+
+    let (overrides, remaining) = Config::extract_cli_overrides(raw_args);
+
+    assert_eq!(remaining, vec!["lidm", "-c", "/etc/lidm/default.toml", "2"]);
+
+    let behavior = overrides.get("behavior").unwrap().as_table().unwrap();
+    assert_eq!(behavior.get("box_type").unwrap().as_str().unwrap(), "rounded");
+    assert_eq!(behavior.get("refresh_rate").unwrap().as_integer().unwrap(), 250);
+    assert_eq!(behavior.get("show_console").unwrap().as_bool().unwrap(), true);
+
+    let auth = overrides.get("auth").unwrap().as_table().unwrap();
+    assert_eq!(auth.get("pam_service").unwrap().as_str().unwrap(), "custom-pam");
 }
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test test_behavior_clap_serde_override`
-Expected: FAIL (ClapSerde not yet implemented on Config).
+Run: `cargo test test_extract_cli_overrides_basic`
+Expected: FAIL (method does not exist).
 
-- [ ] **Step 3: Implement `ClapSerde` on `Config` and Sub-structs**
+- [ ] **Step 3: Implement `extract_cli_overrides` and `apply_table_overrides`**
 
 In `src/config.rs`:
 ```rust
-use clap_serde_derive::ClapSerde;
+impl Config {
+    /// Extract configuration overrides matching `--<section>_<key>` or `--<section>-<key>`
+    /// from an argument list, returning the parsed TOML table and the remaining arguments.
+    pub fn extract_cli_overrides<I, T>(args: I) -> (toml::Table, Vec<String>)
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        let known_sections = ["colors", "functions", "strings", "behavior", "logging", "auth"];
+        let mut cli_table = toml::Table::new();
+        let mut remaining = Vec::new();
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
-#[serde(rename_all = "lowercase")]
-pub enum BoxType {
-    #[default]
-    #[serde(alias = "plain", alias = "default")]
-    Border,
-    None,
-    Rounded,
-    Block,
-}
+        let raw_list: Vec<String> = args.into_iter().map(|s| s.as_ref().to_string()).collect();
+        let mut i = 0;
+        while i < raw_list.len() {
+            let arg = &raw_list[i];
 
-#[derive(ClapSerde, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default)]
-pub struct Behavior {
-    /// Border style
-    #[default(BoxType::Border)]
-    #[arg(long = "behavior-box-type")]
-    pub box_type: BoxType,
+            // Don't treat standalone "-" or non-flag as override
+            if !arg.starts_with("--") || arg == "--" {
+                remaining.push(arg.clone());
+                i += 1;
+                continue;
+            }
 
-    /// Include default shell option in session list
-    #[default(true)]
-    #[arg(long = "behavior-include-defshell", action = clap::ArgAction::Set)]
-    pub include_defshell: bool,
+            let flag_body = &arg[2..]; // strip "--"
+            let (full_key, inline_val) = match flag_body.split_once('=') {
+                Some((k, v)) => (k, Some(v.to_string())),
+                None => (flag_body, None),
+            };
 
-    /// Show intercepted console messages in TUI
-    #[default(false)]
-    #[arg(long = "behavior-show-console", action = clap::ArgAction::Set)]
-    pub show_console: bool,
+            // Split on first '_' or '-'
+            let (section_candidate, item_candidate) = if let Some(pos) = full_key.find(|c| c == '_' || c == '-') {
+                (&full_key[..pos], &full_key[pos + 1..])
+            } else {
+                ("", "")
+            };
 
-    /// System environment source files to load
-    #[default(Vec::new())]
-    #[arg(long = "behavior-source", value_delimiter = ',')]
-    pub source: Vec<String>,
+            let section = section_candidate.to_lowercase();
+            // Convert '-' in item name to '_' (e.g. box-type -> box_type)
+            let item = item_candidate.to_lowercase().replace('-', "_");
 
-    /// User environment source files to load
-    #[default(Vec::new())]
-    #[arg(long = "behavior-user-source", value_delimiter = ',')]
-    pub user_source: Vec<String>,
+            if known_sections.contains(&section.as_str()) && !item.is_empty() {
+                let val_str = if let Some(v) = inline_val {
+                    v
+                } else if i + 1 < raw_list.len() && !raw_list[i + 1].starts_with('-') {
+                    i += 1;
+                    raw_list[i].clone()
+                } else {
+                    // Boolean flag without value implies true
+                    "true".to_string()
+                };
 
-    /// Time format string for header clock
-    #[default("%Y-%m-%d %H:%M:%S".to_string())]
-    #[arg(long = "behavior-timefmt")]
-    pub timefmt: String,
+                let toml_val = if val_str.eq_ignore_ascii_case("true") {
+                    toml::Value::Boolean(true)
+                } else if val_str.eq_ignore_ascii_case("false") {
+                    toml::Value::Boolean(false)
+                } else if let Ok(n) = val_str.parse::<i64>() {
+                    toml::Value::Integer(n)
+                } else if val_str.contains(',') && !val_str.starts_with('"') {
+                    // Comma-separated list for Vec<String>
+                    toml::Value::Array(
+                        val_str
+                            .split(',')
+                            .map(|s| toml::Value::String(s.trim().to_string()))
+                            .collect(),
+                    )
+                } else {
+                    toml::Value::String(val_str)
+                };
 
-    /// UI refresh rate in milliseconds
-    #[default(100)]
-    #[arg(long = "behavior-refresh-rate")]
-    pub refresh_rate: u64,
+                let sec_entry = cli_table
+                    .entry(section)
+                    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+                if let toml::Value::Table(table) = sec_entry {
+                    table.insert(item, toml_val);
+                }
+            } else {
+                remaining.push(arg.clone());
+            }
 
-    /// Bypass login shell when launching user session
-    #[default(false)]
-    #[arg(long = "behavior-bypass-shell-login", action = clap::ArgAction::Set)]
-    pub bypass_shell_login: bool,
+            i += 1;
+        }
 
-    /// Show active theme in footer
-    #[default(false)]
-    #[arg(long = "behavior-show-theme", action = clap::ArgAction::Set)]
-    pub show_theme: bool,
-}
+        (cli_table, remaining)
+    }
 
-#[derive(ClapSerde, Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
-#[serde(default)]
-pub struct Functions {
-    #[arg(long = "functions-poweroff")]
-    pub poweroff: Option<String>,
-    #[arg(long = "functions-reboot")]
-    pub reboot: Option<String>,
-    #[arg(long = "functions-fido")]
-    pub fido: Option<String>,
-    #[arg(long = "functions-theme")]
-    pub theme: Option<String>,
-}
-
-#[derive(ClapSerde, Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
-#[serde(default)]
-pub struct Strings {
-    #[default("poweroff".to_string())]
-    #[arg(long = "strings-f-poweroff")]
-    pub f_poweroff: String,
-    #[default("reboot".to_string())]
-    #[arg(long = "strings-f-reboot")]
-    pub f_reboot: String,
-    #[arg(long = "strings-f-fido")]
-    pub f_fido: Option<String>,
-    #[arg(long = "strings-f-theme")]
-    pub f_theme: Option<String>,
-    #[default("user".to_string())]
-    #[arg(long = "strings-e-user")]
-    pub e_user: String,
-    #[default("password".to_string())]
-    #[arg(long = "strings-e-passwd")]
-    pub e_passwd: String,
-    #[default("wayland".to_string())]
-    #[arg(long = "strings-s-wayland")]
-    pub s_wayland: String,
-    #[default("xorg".to_string())]
-    #[arg(long = "strings-s-xorg")]
-    pub s_xorg: String,
-    #[default("shell".to_string())]
-    #[arg(long = "strings-s-shell")]
-    pub s_shell: String,
-    #[default("< ".to_string())]
-    #[arg(long = "strings-opts-pre")]
-    pub opts_pre: String,
-    #[default(" >".to_string())]
-    #[arg(long = "strings-opts-post")]
-    pub opts_post: String,
-    #[default("…".to_string())]
-    #[arg(long = "strings-ellipsis")]
-    pub ellipsis: String,
-}
-
-#[derive(ClapSerde, Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
-#[serde(default)]
-pub struct LoggingConfig {
-    #[default("/tmp/lidm.log".to_string())]
-    #[arg(long = "logging-file")]
-    pub file: String,
-    #[default("debug".to_string())]
-    #[arg(long = "logging-level")]
-    pub level: String,
-    #[default(false)]
-    #[arg(long = "logging-stdout", action = clap::ArgAction::Set)]
-    pub stdout: bool,
-}
-
-#[derive(ClapSerde, Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
-#[serde(default)]
-pub struct AuthConfig {
-    #[default("login".to_string())]
-    #[arg(long = "auth-pam-service")]
-    pub pam_service: String,
-}
-
-#[derive(ClapSerde, Debug, Default, Clone, Deserialize, Serialize)]
-#[serde(default)]
-pub struct Config {
-    #[clap_serde]
-    #[command(flatten)]
-    pub colors: Colors,
-
-    #[clap_serde]
-    #[command(flatten)]
-    pub functions: Functions,
-
-    #[clap_serde]
-    #[command(flatten)]
-    pub strings: Strings,
-
-    #[clap_serde]
-    #[command(flatten)]
-    pub behavior: Behavior,
-
-    #[clap_serde]
-    #[command(flatten)]
-    pub logging: LoggingConfig,
-
-    #[clap_serde]
-    #[command(flatten)]
-    pub auth: AuthConfig,
+    pub fn apply_table_overrides(&mut self, overrides: toml::Table) {
+        if overrides.is_empty() {
+            return;
+        }
+        if let Ok(mut current_val) = toml::Value::try_from(&*self) {
+            merge_toml_values(&mut current_val, toml::Value::Table(overrides));
+            if let Ok(updated) = current_val.try_into::<Config>() {
+                *self = updated;
+            }
+        }
+    }
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cargo test test_behavior_clap_serde_override`
+Run: `cargo test test_extract_cli_overrides_basic`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/config.rs src/colors.rs
-git commit -m "feat(config): derive ClapSerde on Config and sub-structs"
+git add src/config.rs
+git commit -m "feat(config): implement dynamic CLI override parser"
 ```
 
 ---
 
-### Task 3: Update `Args` and `Config::load`
+### Task 2: Implement Dynamic `--help` Documentation Generation
 
 **Files:**
-- Modify: `src/main.rs:33-69`
-- Modify: `src/config.rs:225-265`
+- Modify: `src/config.rs`
 
 **Interfaces:**
-- Consumes: `<Config as ClapSerde>::Opt`
-- Produces: `Args` with flattened CLI config flags; `Config::load(&Args)` returning configuration merged with CLI overrides.
+- Produces: `pub fn generate_cli_help() -> &'static str` or `String`
+
+- [ ] **Step 1: Write failing test for `generate_cli_help`**
+
+In `src/config.rs`:
+```rust
+#[test]
+fn test_generate_cli_help_contains_options() {
+    let help_text = Config::generate_cli_help();
+    assert!(help_text.contains("Configuration Overrides:"));
+    assert!(help_text.contains("--behavior-box-type"));
+    assert!(help_text.contains("--behavior-refresh-rate"));
+    assert!(help_text.contains("--auth-pam-service"));
+    assert!(help_text.contains("[default: 100]"));
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cargo test test_generate_cli_help_contains_options`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement `generate_cli_help`**
+
+In `src/config.rs`:
+```rust
+impl Config {
+    pub fn generate_cli_help() -> String {
+        let default_val = toml::Value::try_from(&Config::default()).unwrap_or(toml::Value::Table(toml::Table::new()));
+        let mut out = String::from(
+            "Configuration Overrides:\n  Any setting can be overridden via --<section>-<key> <value> or LIDM_<SECTION>_<KEY>=<value>\n\n",
+        );
+
+        if let toml::Value::Table(sections) = default_val {
+            for (sec_name, sec_val) in sections {
+                if let toml::Value::Table(keys) = sec_val {
+                    out.push_str(&format!("  [{}]:\n", sec_name));
+                    for (k, v) in keys {
+                        let flag_name = format!("--{}-{}", sec_name, k.replace('_', "-"));
+                        let default_display = match v {
+                            toml::Value::String(s) => format!("\"{}\"", s),
+                            toml::Value::Integer(i) => i.to_string(),
+                            toml::Value::Float(f) => f.to_string(),
+                            toml::Value::Boolean(b) => b.to_string(),
+                            toml::Value::Array(a) => format!("{:?}", a),
+                            _ => format!("{}", v),
+                        };
+                        out.push_str(&format!("    {:<35} [default: {}]\n", flag_name, default_display));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        out
+    }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cargo test test_generate_cli_help_contains_options`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/config.rs
+git commit -m "feat(config): generate dynamic configuration help text"
+```
+
+---
+
+### Task 3: Integrate with `main.rs` & `Config::load`
+
+**Files:**
+- Modify: `src/main.rs`
+- Modify: `src/config.rs`
+
+**Interfaces:**
+- Updates `main()` to extract CLI overrides, pass remaining args to Clap with dynamic `after_help`, and pass overrides to `Config::load`.
 
 - [ ] **Step 1: Write failing test for full precedence (Defaults < TOML < Env < CLI)**
 
 In `src/config.rs`:
 ```rust
 #[test]
-fn test_config_full_precedence_with_cli() {
-    use clap_serde_derive::ClapSerde;
+fn test_config_load_precedence_full() {
     let _guard = ENV_LOCK.lock().unwrap();
-
     let temp_dir = std::env::temp_dir();
-    let config_path = temp_dir.join("test_precedence_cli.toml");
+    let config_path = temp_dir.join("test_lidm_dyn_precedence.toml");
     let toml_content = r#"
 [behavior]
-refresh_rate = 200
+refresh_rate = 150
 box_type = "rounded"
+
+[auth]
+pam_service = "toml-pam"
 "#;
     std::fs::write(&config_path, toml_content).unwrap();
 
@@ -292,20 +294,18 @@ box_type = "rounded"
         std::env::set_var("LIDM_BEHAVIOR_REFRESH_RATE", "300");
     }
 
-    let mut opt = <Config as ClapSerde>::Opt::default();
-    opt.behavior.refresh_rate = Some(400); // CLI overrides Env and TOML
+    let mut cli_overrides = toml::Table::new();
+    let mut behavior_overrides = toml::Table::new();
+    behavior_overrides.insert("refresh_rate".to_string(), toml::Value::Integer(500));
+    cli_overrides.insert("behavior".to_string(), toml::Value::Table(behavior_overrides));
 
-    let args = crate::Args {
-        command: None,
-        vt: None,
-        conf_path: config_path.to_str().unwrap().to_string(),
-        config: opt,
-    };
+    let (config, _) = Config::load_with_overrides(config_path.to_str().unwrap(), Some(cli_overrides));
 
-    let (cfg, _) = Config::load(&args);
-
-    assert_eq!(cfg.behavior.refresh_rate, 400); // CLI won
-    assert_eq!(cfg.behavior.box_type, BoxType::Rounded); // TOML preserved
+    // CLI overrides Env (500 > 300)
+    assert_eq!(config.behavior.refresh_rate, 500);
+    // TOML preserved
+    assert_eq!(config.behavior.box_type, BoxType::Rounded);
+    assert_eq!(config.auth.pam_service, "toml-pam");
 
     unsafe {
         std::env::remove_var("LIDM_BEHAVIOR_REFRESH_RATE");
@@ -316,55 +316,14 @@ box_type = "rounded"
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test test_config_full_precedence_with_cli`
-Expected: FAIL (Args and Config::load not yet updated).
+Run: `cargo test test_config_load_precedence_full`
+Expected: FAIL.
 
-- [ ] **Step 3: Update `Args` and `Config::load`**
-
-In `src/main.rs`:
-```rust
-use clap_serde_derive::ClapSerde;
-
-#[derive(Parser, Debug)]
-#[command(
-    version = concat!(
-        env!("CARGO_PKG_VERSION"),
-        " (git ",
-        env!("VERGEN_GIT_DESCRIBE"),
-        ", build date ",
-        env!("VERGEN_BUILD_TIMESTAMP"),
-        ", compiler ",
-        env!("VERGEN_RUSTC_SEMVER"),
-        ")"
-    ),
-    about = "LiDM: Lightweight Display Manager"
-)]
-pub struct Args {
-    #[command(subcommand)]
-    pub command: Option<Commands>,
-
-    #[arg(help = "VT number to switch to")]
-    pub vt: Option<c_int>,
-
-    #[arg(
-        short = 'c',
-        long = "config",
-        env = "LIDM_CONF",
-        default_value = "/etc/lidm/default.toml",
-        help = "Path to configuration file"
-    )]
-    pub conf_path: String,
-
-    #[clap_serde]
-    #[command(flatten)]
-    pub config: <Config as ClapSerde>::Opt,
-}
-```
+- [ ] **Step 3: Update `Config::load` and `main.rs`**
 
 In `src/config.rs`:
 ```rust
-pub fn load(args: &crate::Args) -> (Self, Option<String>) {
-    let conf_path = &args.conf_path;
+pub fn load_with_overrides(conf_path: &str, cli_overrides: Option<toml::Table>) -> (Self, Option<String>) {
     let (mut config, err_msg) = if Path::new(conf_path).exists() {
         match Self::from_file(conf_path) {
             Ok(cfg) => (cfg, None),
@@ -382,68 +341,117 @@ pub fn load(args: &crate::Args) -> (Self, Option<String>) {
     };
 
     config.apply_env_overrides();
-    config.merge_opts(args.config.clone());
+    if let Some(overrides) = cli_overrides {
+        config.apply_table_overrides(overrides);
+    }
 
     (config, err_msg)
 }
 ```
 
+In `src/main.rs`:
+```rust
+#[derive(Parser, Debug)]
+#[command(
+    version = concat!(
+        env!("CARGO_PKG_VERSION"),
+        " (git ",
+        env!("VERGEN_GIT_DESCRIBE"),
+        ", build date ",
+        env!("VERGEN_BUILD_TIMESTAMP"),
+        ", compiler ",
+        env!("VERGEN_RUSTC_SEMVER"),
+        ")"
+    ),
+    about = "LiDM: Lightweight Display Manager",
+    after_help = config::Config::generate_cli_help()
+)]
+pub struct Args {
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+
+    #[arg(help = "VT number to switch to")]
+    pub vt: Option<c_int>,
+
+    #[arg(
+        short = 'c',
+        long = "config",
+        env = "LIDM_CONF",
+        default_value = "/etc/lidm/default.toml",
+        help = "Path to configuration file"
+    )]
+    pub conf_path: String,
+}
+
+fn main() {
+    let (cli_overrides, remaining_args) = config::Config::extract_cli_overrides(std::env::args());
+    let args = Args::parse_from(remaining_args);
+
+    if let Some(Commands::CopyConfig { ref dest }) = args.command {
+        match config::Config::execute_copy_config(dest.as_deref()) {
+            Ok(path) => {
+                println!("Default configuration successfully copied to '{}'.", path.display());
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("Error copying default configuration: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // ... Load config
+    let (config, config_err) = config::Config::load_with_overrides(&args.conf_path, Some(cli_overrides));
+    // ...
+}
+```
+
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cargo test test_config_full_precedence_with_cli`
+Run: `cargo test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/main.rs src/config.rs
-git commit -m "feat(cli): integrate ClapSerde Opt flattening in Args and Config::load"
+git commit -m "feat: integrate dynamic CLI overrides into main and Config::load"
 ```
 
 ---
 
-### Task 4: CLI Help Output & Behavior Flag Integration Tests
+### Task 4: Comprehensive End-to-End Tests
 
 **Files:**
 - Modify: `src/config.rs` (tests)
 - Modify: `src/main.rs` (tests)
 
-- [ ] **Step 1: Write tests for CLI argument parsing and `--help` output**
+- [ ] **Step 1: Add integration tests for CLI flags and `--help`**
 
 ```rust
 #[test]
-fn test_cli_help_contains_behavior_flags() {
-    use clap::CommandFactory;
-    let mut cmd = Args::command();
-    let mut help_buf = Vec::new();
-    cmd.write_help(&mut help_buf).unwrap();
-    let help_str = String::from_utf8(help_buf).unwrap();
-
-    assert!(help_str.contains("--behavior-box-type"));
-    assert!(help_str.contains("--behavior-refresh-rate"));
-    assert!(help_str.contains("--behavior-include-defshell"));
-    assert!(help_str.contains("--behavior-bypass-shell-login"));
-    assert!(help_str.contains("[default: border]"));
-    assert!(help_str.contains("[default: 100]"));
-}
-
-#[test]
-fn test_cli_parse_from_args_behavior_flags() {
-    let args = Args::try_parse_from([
+fn test_full_cli_args_parsing_and_config_apply() {
+    let input_args = vec![
         "lidm",
-        "--behavior-box-type", "rounded",
-        "--behavior-refresh-rate", "350",
+        "--behavior-box-type", "block",
+        "--behavior-refresh-rate", "450",
         "--behavior-bypass-shell-login", "true",
-    ]).unwrap();
+        "--logging-level", "warn",
+        "-c", "/nonexistent.toml",
+    ];
 
-    let (config, _) = Config::load(&args);
-    assert_eq!(config.behavior.box_type, BoxType::Rounded);
-    assert_eq!(config.behavior.refresh_rate, 350);
+    let (overrides, remaining) = Config::extract_cli_overrides(input_args);
+    let parsed_args = Args::try_parse_from(remaining).unwrap();
+
+    let (config, _) = Config::load_with_overrides(&parsed_args.conf_path, Some(overrides));
+    assert_eq!(config.behavior.box_type, BoxType::Block);
+    assert_eq!(config.behavior.refresh_rate, 450);
     assert!(config.behavior.bypass_shell_login);
+    assert_eq!(config.logging.level, "warn");
 }
 ```
 
-- [ ] **Step 2: Run all tests to verify**
+- [ ] **Step 2: Run all tests**
 
 Run: `cargo test`
 Expected: All tests PASS.
@@ -452,5 +460,5 @@ Expected: All tests PASS.
 
 ```bash
 git add src/config.rs src/main.rs
-git commit -m "test(cli): add tests for --help rendering and CLI flag parsing"
+git commit -m "test: add full integration tests for dynamic CLI overrides"
 ```

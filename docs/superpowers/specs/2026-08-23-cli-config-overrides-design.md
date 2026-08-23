@@ -1,100 +1,64 @@
-# Design Spec: Unified CLI Configuration Overrides
+# Design Spec: Dynamic CLI Configuration Overrides (Zero Struct Duplication)
 
 **Date:** 2026-08-23  
 **Status:** Approved
 
 ## Overview
-Currently, `lidm` supports configuration via a TOML file and automatic environment variables (`LIDM_<SECTION>_<KEY>`). CLI argument overrides are limited to a small subset (e.g. logging options). 
+Currently, `lidm` supports configuration via a TOML file and automatic environment variables (`LIDM_<SECTION>_<KEY>`). 
 
-This design introduces comprehensive CLI argument overrides (such as `--behavior-box-type`, `--behavior-refresh-rate`, etc.) using `clap-serde-derive`. This provides:
-1. **Single struct definition**: Configuration structs (`Behavior`, `AuthConfig`, etc.) are defined once with no duplicate structs.
-2. **Native `clap` `--help` support**: All flags, docstrings, inferred enum values, and default values appear automatically in `lidm --help`.
-3. **Hierarchical Precedence**: Defaults < TOML file < Environment variables < CLI flags.
+This design introduces dynamic command-line configuration overrides (e.g. `--behavior-box-type rounded`, `--behavior_refresh_rate 250`, `--auth-pam-service custom`) following the exact same dynamic pattern as environment variables:
+1. **Zero Struct Annotations / Repetition**: Configuration structs (`Behavior`, `AuthConfig`, `LoggingConfig`, etc.) remain 100% pure Rust/Serde structs with zero macro attributes or duplicate field definitions.
+2. **Dynamic Flag Resolution**: CLI arguments matching `--<section>_<key>` or `--<section>-<key>` are dynamically mapped to configuration fields.
+3. **Comprehensive `--help` Listing**: A dynamic help formatter inspects `Config::default()` and appends a complete table of all available configuration overrides and their default values to `lidm --help`.
+4. **Hierarchical Precedence**: Defaults < TOML file < Environment variables (`LIDM_...`) < CLI flags.
 
 ---
 
-## Architecture & Struct Design
+## Architecture & Data Flow
 
-### Dependencies
-Add `clap-serde-derive` to `Cargo.toml`:
-```toml
-[dependencies]
-clap-serde-derive = "0.2"
-```
-
-### Struct Annotations in `src/config.rs`
-The configuration structures derive `ClapSerde` alongside `Serialize`, `Deserialize`, and `Default`. Type inference (such as `clap::ValueEnum` for `BoxType`) and default value display are handled automatically by `clap` and `clap-serde-derive`:
+### 1. Pure Configuration Structs (`src/config.rs`)
+Structs remain completely clean without any `clap` or `clap-serde-derive` annotations:
 
 ```rust
-use clap_serde_derive::ClapSerde;
-
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
-#[serde(rename_all = "lowercase")]
-pub enum BoxType {
-    #[default]
-    #[serde(alias = "plain", alias = "default")]
-    Border,
-    None,
-    Rounded,
-    Block,
-}
-
-#[derive(ClapSerde, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct Behavior {
-    /// Border style
-    #[default(BoxType::Border)]
-    #[arg(long = "behavior-box-type")]
     pub box_type: BoxType,
-
-    /// Include default shell option in session list
-    #[default(true)]
-    #[arg(long = "behavior-include-defshell", action = clap::ArgAction::Set)]
     pub include_defshell: bool,
-
-    /// Show intercepted console messages in TUI
-    #[default(false)]
-    #[arg(long = "behavior-show-console", action = clap::ArgAction::Set)]
     pub show_console: bool,
-
-    /// System environment source files to load
-    #[default(Vec::new())]
-    #[arg(long = "behavior-source", value_delimiter = ',')]
     pub source: Vec<String>,
-
-    /// User environment source files to load
-    #[default(Vec::new())]
-    #[arg(long = "behavior-user-source", value_delimiter = ',')]
     pub user_source: Vec<String>,
-
-    /// Time format string for header clock
-    #[default("%Y-%m-%d %H:%M:%S".to_string())]
-    #[arg(long = "behavior-timefmt")]
     pub timefmt: String,
-
-    /// UI refresh rate in milliseconds
-    #[default(100)]
-    #[arg(long = "behavior-refresh-rate")]
     pub refresh_rate: u64,
-
-    /// Bypass login shell when launching user session
-    #[default(false)]
-    #[arg(long = "behavior-bypass-shell-login", action = clap::ArgAction::Set)]
     pub bypass_shell_login: bool,
-
-    /// Show active theme in footer
-    #[default(false)]
-    #[arg(long = "behavior-show-theme", action = clap::ArgAction::Set)]
     pub show_theme: bool,
 }
 ```
 
-### Top-Level CLI Flattening in `src/main.rs`
-`Args` flattens the config arguments using `<Config as ClapSerde>::Opt`:
+### 2. Dynamic CLI Argument Extraction
+A parser extracts configuration override flags before passing top-level arguments (such as `-c / --config`, `vt`, subcommands) to Clap:
+
+```rust
+pub fn extract_cli_overrides<I, T>(args: I) -> (toml::Table, Vec<String>)
+where
+    I: IntoIterator<Item = T>,
+    T: AsRef<str>,
+```
+
+- Supports `--<section>_<key>=<value>`, `--<section>-<key>=<value>`, `--<section>_<key> <value>`, `--<section>-<key> <value>`.
+- Supports boolean flags without explicit value (e.g., `--behavior-show-console` implies `true`).
+- Auto-types values (`true`/`false` -> bool, numbers -> integer, comma-separated -> arrays, others -> string).
+- Merges into the TOML table using the same pipeline as environment variables.
+
+### 3. Dynamic `--help` Generation
+`Config::generate_cli_help()` serializes `Config::default()` into a structured representation and formats an `after_help` section:
 
 ```rust
 #[derive(Parser, Debug)]
-#[command(about = "LiDM: Lightweight Display Manager")]
+#[command(
+    about = "LiDM: Lightweight Display Manager",
+    after_help = crate::config::Config::generate_cli_help()
+)]
 pub struct Args {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -110,36 +74,25 @@ pub struct Args {
         help = "Path to configuration file"
     )]
     pub conf_path: String,
-
-    #[clap_serde]
-    #[command(flatten)]
-    pub config: <Config as ClapSerde>::Opt,
 }
 ```
 
 ---
 
-## Data Flow & Precedence
+## Configuration Loading Pipeline
 
-1. **Defaults**: Initial state is constructed from `Config::default()`.
-2. **TOML File**: If `-c / --config <path>` exists, it is parsed via serde/toml and replaces/merges into `Config`.
-3. **Environment Variables**: `config.apply_env_overrides()` inspects `LIDM_<SECTION>_<KEY>` and applies overrides.
-4. **CLI Flags**: `config = config.merge_opts(args.config)` applies any explicitly provided CLI flags, overriding both TOML and environment variables.
-
----
-
-## Error Handling & Validation
-
-- `clap` validates argument types (integers, enum variants for `box_type`, etc.) during CLI parsing, printing clear help/usage messages on error with default values and allowed options.
-- Corrupted or invalid TOML files trigger a fallback to default values while preserving environment and CLI overrides.
+1. **Defaults**: Initial configuration from `Config::default()`.
+2. **TOML File**: Load from `-c / --config` path if present.
+3. **Environment Variables**: Apply `LIDM_<SECTION>_<KEY>` overrides.
+4. **CLI Overrides**: Apply extracted `--<section>-<key>` / `--<section>_<key>` overrides (highest priority).
 
 ---
 
 ## Testing Plan
 
 1. **Unit Tests**:
+   - `test_extract_cli_overrides_various_formats`: Test `--behavior-box-type rounded`, `--behavior_refresh_rate=250`, `--behavior-show-console`, etc.
    - `test_cli_overrides_precedence`: Verify `Defaults < TOML < Env < CLI`.
-   - `test_behavior_cli_flags`: Verify parsing and merging of all `Behavior` fields (`box_type`, `refresh_rate`, `bypass_shell_login`, etc.).
-   - `test_help_output`: Verify all `--behavior-...` flags appear in CLI help generation with their defaults.
+   - `test_generate_cli_help`: Verify `--help` contains all sections and default values.
 2. **Automated Verification**:
-   - Run `cargo test` and ensure all tests pass.
+   - Run `cargo test` and verify all tests pass.
