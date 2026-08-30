@@ -26,13 +26,16 @@ impl Theme {
 pub fn discover_themes(base_colors: &Colors) -> Vec<Theme> {
     let mut themes = vec![Theme::new("default", "default", base_colors.clone())];
 
-    let search_paths = [
+    let mut search_paths: Vec<&Path> = vec![
         Path::new("/etc/rulmee/themes"),
         Path::new("/usr/share/rulmee/themes"),
-        Path::new("/etc/lidm/themes"),
-        Path::new("/usr/share/lidm/themes"),
-        Path::new("./themes"),
     ];
+    search_paths.extend(
+        crate::legacy_ini::LEGACY_THEME_SEARCH_PATHS
+            .iter()
+            .map(Path::new),
+    );
+    search_paths.push(Path::new("./themes"));
 
     for dir in search_paths {
         let Ok(entries) = std::fs::read_dir(dir) else {
