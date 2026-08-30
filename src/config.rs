@@ -344,21 +344,90 @@ impl Config {
         })
     }
 
-    pub fn load_with_overrides(conf_path: &str, cli_overrides: Option<toml::Table>) -> (Self, Option<String>) {
-        let (mut config, err_msg) = if Path::new(conf_path).exists() {
-            match Self::from_file(conf_path) {
-                Ok(cfg) => (cfg, None),
+    /// Resolve configuration file path with fallback to legacy path if the primary path is not found.
+    pub fn resolve_config_path(primary: &str) -> (String, Option<String>) {
+        Self::resolve_config_path_with_custom_fallback(
+            primary,
+            "/etc/rulmee/default.toml",
+            "/etc/lidm/default.toml",
+        )
+    }
+
+    /// Resolve configuration file path given an expected primary and fallback path.
+    pub fn resolve_config_path_with_custom_fallback(
+        primary: &str,
+        expected_primary: &str,
+        fallback_path: &str,
+    ) -> (String, Option<String>) {
+        if Path::new(primary).exists() {
+            return (primary.to_string(), None);
+        }
+
+        if primary == expected_primary && Path::new(fallback_path).exists() {
+            let parent_dir = Path::new(expected_primary)
+                .parent()
+                .unwrap_or(Path::new(""))
+                .display();
+            let warn_msg = format!(
+                "Path '{}' not found; falling back to legacy '{}' (deprecated). Please migrate configuration to '{}'.",
+                expected_primary,
+                fallback_path,
+                parent_dir
+            );
+            log::warn!("{}", warn_msg);
+            return (fallback_path.to_string(), Some(warn_msg));
+        }
+
+        (primary.to_string(), None)
+    }
+
+    pub fn load_with_fallback(
+        primary: &str,
+        fallback: &str,
+        cli_overrides: Option<toml::Table>,
+    ) -> (Self, Option<String>) {
+        let (resolved_path, fallback_warning) =
+            Self::resolve_config_path_with_custom_fallback(primary, primary, fallback);
+        let (mut config, err_msg) = if Path::new(&resolved_path).exists() {
+            match Self::from_file(&resolved_path) {
+                Ok(cfg) => (cfg, fallback_warning),
                 Err(e) => {
                     let msg = format!(
                         "Failed to parse config from '{}': {}. Falling back to default configuration.",
-                        conf_path, e
+                        resolved_path, e
                     );
                     eprintln!("{}", msg);
                     (Self::default(), Some(msg))
                 }
             }
         } else {
-            (Self::default(), None)
+            (Self::default(), fallback_warning)
+        };
+
+        config.apply_env_overrides();
+        if let Some(overrides) = cli_overrides {
+            config.apply_table_overrides(overrides);
+        }
+
+        (config, err_msg)
+    }
+
+    pub fn load_with_overrides(conf_path: &str, cli_overrides: Option<toml::Table>) -> (Self, Option<String>) {
+        let (resolved_path, fallback_warning) = Self::resolve_config_path(conf_path);
+        let (mut config, err_msg) = if Path::new(&resolved_path).exists() {
+            match Self::from_file(&resolved_path) {
+                Ok(cfg) => (cfg, fallback_warning),
+                Err(e) => {
+                    let msg = format!(
+                        "Failed to parse config from '{}': {}. Falling back to default configuration.",
+                        resolved_path, e
+                    );
+                    eprintln!("{}", msg);
+                    (Self::default(), Some(msg))
+                }
+            }
+        } else {
+            (Self::default(), fallback_warning)
         };
 
         config.apply_env_overrides();
@@ -800,6 +869,75 @@ pam_service = "gdm"
         assert!(help_text.contains("--behavior-refresh-rate"));
         assert!(help_text.contains("--auth-pam-service"));
         assert!(help_text.contains("[default: 100]"));
+    }
+
+    #[test]
+    fn test_load_with_overrides_fallback_path() {
+        let temp_dir = std::env::temp_dir();
+        let legacy_dir = temp_dir.join("lidm_test_fallback");
+        let _ = std::fs::create_dir_all(&legacy_dir);
+        let legacy_conf = legacy_dir.join("default.toml");
+        std::fs::write(&legacy_conf, "[behavior]\nshow_console = true\n").unwrap();
+
+        let primary_path = "/nonexistent/path/rulmee/default.toml";
+        let (cfg, warning) = Config::load_with_fallback(primary_path, legacy_conf.to_str().unwrap(), None);
+        assert!(cfg.behavior.show_console);
+        assert!(warning.is_some());
+        let warn_msg = warning.unwrap();
+        assert!(warn_msg.contains("deprecated"));
+        assert!(warn_msg.contains("Please migrate"));
+
+        let _ = std::fs::remove_dir_all(legacy_dir);
+    }
+
+    #[test]
+    fn test_resolve_config_path_when_primary_exists() {
+        let temp_dir = std::env::temp_dir();
+        let primary = temp_dir.join("lidm_test_primary_exists.toml");
+        std::fs::write(&primary, "[behavior]\nrefresh_rate = 50\n").unwrap();
+
+        let (resolved, warning) = Config::resolve_config_path(primary.to_str().unwrap());
+        assert_eq!(resolved, primary.to_str().unwrap());
+        assert!(warning.is_none());
+
+        let _ = std::fs::remove_file(primary);
+    }
+
+    #[test]
+    fn test_resolve_config_path_custom_fallback() {
+        let temp_dir = std::env::temp_dir();
+        let fallback = temp_dir.join("lidm_test_custom_fallback.toml");
+        std::fs::write(&fallback, "[behavior]\nrefresh_rate = 75\n").unwrap();
+
+        let primary = "/nonexistent/custom/primary.toml";
+        let (resolved, warning) = Config::resolve_config_path_with_custom_fallback(
+            primary,
+            primary,
+            fallback.to_str().unwrap(),
+        );
+        assert_eq!(resolved, fallback.to_str().unwrap());
+        assert!(warning.is_some());
+        assert!(warning.unwrap().contains("deprecated"));
+
+        let _ = std::fs::remove_file(fallback);
+    }
+
+    #[test]
+    fn test_resolve_config_path_neither_exists() {
+        let primary = "/nonexistent/path/rulmee_custom_missing.toml";
+        let (resolved, warning) = Config::resolve_config_path_with_custom_fallback(
+            primary,
+            primary,
+            "/nonexistent/path/lidm_custom_missing.toml",
+        );
+        assert_eq!(resolved, primary);
+        assert!(warning.is_none());
+    }
+
+    #[test]
+    fn test_resolve_config_path_default_nonexistent() {
+        let (resolved, _) = Config::resolve_config_path("/some/arbitrary/path.toml");
+        assert_eq!(resolved, "/some/arbitrary/path.toml");
     }
 }
 
