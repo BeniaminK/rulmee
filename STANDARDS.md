@@ -144,5 +144,5 @@ Rulmee implements a multi-destination logging architecture utilizing `tracing`, 
 * Pressing <kbd>F4</kbd> within the TUI opens an overlay log inspector, permitting real-time inspection of PAM and session events directly inside the application interface.
 
 ### 7.4 Deprecation Warning Standard
-* Fallback paths (such as loading legacy `/etc/lidm/config.ini` or legacy ANSI `.ini` theme files) emit `tracing::warn!` notices.
-* Deprecation logs explicitly advise administrators to update their deployment to `/etc/rulmee/config.toml` or `/etc/rulmee/theme.toml`.
+* Fallback paths (such as loading legacy ANSI `.ini` theme files) emit `tracing::warn!` notices.
+* Deprecation logs explicitly advise administrators to update their deployment to `/etc/rulmee/default.toml` or TOML theme files.

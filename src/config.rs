@@ -2,6 +2,8 @@ use crate::colors::Colors;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+pub const DEFAULT_CONFIG_PATH: &str = "/etc/rulmee/default.toml";
+
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum BoxType {
@@ -350,13 +352,9 @@ impl Config {
         })
     }
 
-    /// Resolve configuration file path with fallback to legacy path if the primary path is not found.
+    /// Resolve configuration file path.
     pub fn resolve_config_path(primary: &str) -> (String, Option<String>) {
-        Self::resolve_config_path_with_custom_fallback(
-            primary,
-            "/etc/rulmee/default.toml",
-            "/etc/lidm/default.toml",
-        )
+        (primary.to_string(), None)
     }
 
     /// Resolve configuration file path given an expected primary and fallback path.
@@ -479,7 +477,7 @@ impl Config {
                 .join("default.toml");
         }
 
-        std::path::PathBuf::from("/etc/rulmee/default.toml")
+        std::path::PathBuf::from(DEFAULT_CONFIG_PATH)
     }
 
     pub fn execute_copy_config(

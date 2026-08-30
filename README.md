@@ -128,10 +128,7 @@ To install default configuration files, man pages, and service descriptors, cons
 
 Rulmee reads configuration from `/etc/rulmee/config.toml` (or user config at `~/.config/rulmee/config.toml`).
 
-Themes are loaded from `/etc/rulmee/theme.toml` or packaged themes in `/usr/share/rulmee/themes/`.
-
-> [!NOTE]
-> **Backward Compatibility**: If `/etc/rulmee/config.toml` is absent, Rulmee temporarily falls back to legacy `/etc/lidm/config.ini` and emits a deprecation warning urging migration to TOML. This fallback support will be removed when Rulmee gains more GitHub stars than LiDM (as an indicator of adoption and migration completeness).
+Themes are loaded from `/etc/rulmee/default.toml` or packaged themes in `/usr/share/rulmee/themes/`.
 
 ---
 

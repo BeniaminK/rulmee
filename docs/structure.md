@@ -29,7 +29,7 @@ src/
 Handles program initialization, command-line flags, configuration merging, terminal initialization via Crossterm, and the main event loop.
 
 ### `config.rs` & `theme.rs`
-Loads TOML configuration files (`/etc/rulmee/config.toml` and `theme.toml`). If primary configs are not found, falls back to `/etc/lidm/config.ini` and legacy INI themes with deprecation warnings.
+Loads TOML configuration files (`/etc/rulmee/default.toml` and themes).
 
 ### `logging.rs`
 Configures a multi-destination `tracing` subscriber:

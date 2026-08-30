@@ -22,7 +22,7 @@ A legacy ANSI SGR escape code theme format (`.ini`) supported temporarily for ba
 The canonical configuration and styling format. Expressed using TOML files (`/etc/rulmee/theme.toml` or custom theme files) deserialized into structured Rust theme models.
 
 ### Configuration Directory
-The primary system configuration directory is `/etc/rulmee/`. For backward compatibility, if `/etc/rulmee/config.toml` is not present, Rulmee temporarily falls back to `/etc/lidm/config.ini` with a deprecation warning.
+The primary system configuration directory is `/etc/rulmee/`.
 
 ### PAM Session Lifecycle
 The strict 10-step sequence for authentication and session credential creation via Linux-PAM (`pam_start` $\rightarrow$ `pam_authenticate` $\rightarrow$ `pam_acct_mgmt` $\rightarrow$ `pam_setcred` $\rightarrow$ `pam_open_session` $\rightarrow$ `exec` $\rightarrow$ `pam_close_session`).

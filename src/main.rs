@@ -58,7 +58,7 @@ pub struct Args {
         short = 'c',
         long = "config",
         env = "RULMEE_CONF",
-        default_value = "/etc/rulmee/default.toml",
+        default_value = config::DEFAULT_CONFIG_PATH,
         help = "Path to configuration file"
     )]
     pub conf_path: String,
