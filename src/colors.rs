@@ -129,8 +129,15 @@ mod tests {
     #[test]
     fn test_modifier_exhaustiveness() {
         let modifier_names = [
-            "bold", "dim", "italic", "underline", "slow_blink", "rapid_blink",
-            "reversed", "hidden", "crossed_out",
+            "bold",
+            "dim",
+            "italic",
+            "underline",
+            "slow_blink",
+            "rapid_blink",
+            "reversed",
+            "hidden",
+            "crossed_out",
         ];
         let mut mapped = Modifier::empty();
         for name in modifier_names {

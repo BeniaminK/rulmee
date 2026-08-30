@@ -58,7 +58,11 @@ pub fn discover_themes(base_colors: &Colors) -> Vec<Theme> {
             let colors_result = match ext {
                 "toml" => std::fs::read_to_string(&p)
                     .map_err(|e| e.to_string())
-                    .and_then(|c| Config::from_toml_str(&c).map(|cfg| cfg.colors).map_err(|e| e.to_string())),
+                    .and_then(|c| {
+                        Config::from_toml_str(&c)
+                            .map(|cfg| cfg.colors)
+                            .map_err(|e| e.to_string())
+                    }),
                 "ini" => crate::legacy_ini::load_legacy_ini_theme(&p),
                 _ => continue,
             };
@@ -66,7 +70,11 @@ pub fn discover_themes(base_colors: &Colors) -> Vec<Theme> {
             match colors_result {
                 Ok(colors) => {
                     let path_str = p.display().to_string();
-                    log::info!("Theme discovery: loaded theme '{}' from '{}'", name, path_str);
+                    log::info!(
+                        "Theme discovery: loaded theme '{}' from '{}'",
+                        name,
+                        path_str
+                    );
                     themes.push(Theme::new(name, path_str, colors));
                 }
                 Err(e) => {
@@ -79,7 +87,11 @@ pub fn discover_themes(base_colors: &Colors) -> Vec<Theme> {
     log::info!(
         "Theme discovery: found {} theme(s): [{}]",
         themes.len(),
-        themes.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ")
+        themes
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     );
 
     themes
@@ -113,7 +125,9 @@ mod tests {
         let base_colors = Colors::default();
         let mut themes = vec![Theme::new("default", "default", base_colors.clone())];
 
-        let Ok(entries) = std::fs::read_dir(&themes_dir) else { panic!() };
+        let Ok(entries) = std::fs::read_dir(&themes_dir) else {
+            panic!()
+        };
         let mut paths: Vec<_> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
         paths.sort();
 
@@ -121,7 +135,11 @@ mod tests {
             let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("");
             let name = p.file_stem().unwrap().to_str().unwrap().to_string();
             let colors = match ext {
-                "toml" => Config::from_toml_str(&std::fs::read_to_string(&p).unwrap()).unwrap().colors,
+                "toml" => {
+                    Config::from_toml_str(&std::fs::read_to_string(&p).unwrap())
+                        .unwrap()
+                        .colors
+                }
                 "ini" => crate::legacy_ini::load_legacy_ini_theme(&p).unwrap(),
                 _ => continue,
             };

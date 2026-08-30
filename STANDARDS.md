@@ -1,6 +1,6 @@
-# Linux Display Manager Standards & Specifications Guide (LiDM)
+# Linux Display Manager Standards & Specifications Guide (Rulmee)
 
-This document details the Linux specifications, POSIX standards, and freedesktop.org conventions governing **LiDM** (Lightweight Display Manager). It serves as an authoritative reference for session discovery, PAM authentication, environment setup, privilege separation, and desktop launching.
+This document details the Linux specifications, POSIX standards, and freedesktop.org conventions governing **Rulmee** (RUst Login ManagEEr). It serves as an authoritative reference for session discovery, PAM authentication, environment setup, privilege separation, logging standards, and desktop launching.
 
 ---
 
@@ -46,7 +46,7 @@ Linux-PAM standardizes user authentication, account verification, and session cr
 ### 2.1 PAM Session Lifecycle
 A display manager must invoke PAM in the following strict order:
 
-1. `pam_start(service_name, username, &conv, &pamh)`: Initialize PAM context (service `login` or `lidm`).
+1. `pam_start(service_name, username, &conv, &pamh)`: Initialize PAM context (service `login` or `rulmee`).
 2. `pam_authenticate(pamh, flags)`: Verify user credentials (password, FIDO, etc.).
 3. `pam_acct_mgmt(pamh, flags)`: Verify account validity (password expiry, access rules).
 4. `pam_setcred(pamh, PAM_ESTABLISH_CRED)`: Establish user credentials.
@@ -114,12 +114,35 @@ Inside the child process after `fork()`, privileges must be dropped in the follo
 
 ---
 
-## 6. Summary Matrix: LiDM Architecture Alignment
+## 6. Summary Matrix: Rulmee Architecture Alignment
 
-| Architectural Component | Standard / Specification | LiDM Implementation Strategy |
+| Architectural Component | Standard / Specification | Rulmee Implementation Strategy |
 | :--- | :--- | :--- |
 | **Session Discovery** | Freedesktop Desktop Entry Spec | Scans `/usr/share/{xsessions,wayland-sessions}`, strips `%` specifiers. |
 | **Authentication & PAM** | Linux-PAM API Specification | Executes full `pam_open_session` lifecycle; retrieves `pam_getenvlist()`. |
 | **Session Tracking & VTs** | `systemd-logind` Specification | Inherits `XDG_RUNTIME_DIR`, passes `XDG_SEAT` and `XDG_VTNR` via `pam_systemd`. |
 | **Environment Sourcing** | POSIX.1 Login Shell Standard | Spawns session via `$SHELL -l -c "exec <cmd>"` when `bypass_shell_login` is `false`. |
 | **Privilege Separation** | POSIX Security Standards | `setgid` $\rightarrow$ `initgroups` $\rightarrow$ `setuid` in child process before shell execution. |
+| **Logging & Diagnostics** | Tracing / Systemd Journal Spec | Multi-destination subscriber (`stderr` for journald, `/tmp/rulmee.log` file, `<kbd>F4</kbd>` in-app TUI ring buffer). |
+
+---
+
+## 7. Logging Standards & Architecture
+
+Rulmee implements a multi-destination logging architecture utilizing `tracing`, `tracing-subscriber`, and `tracing-appender` to support thorough diagnostics without corrupting the terminal user interface:
+
+### 7.1 Screen Corruption Prevention (FD 1 vs FD 2)
+* **Stdout (FD 1)**: Standard output is reserved exclusively for Ratatui and Crossterm TUI drawing and ANSI escape sequences. No log subscriber writes to `stdout`.
+* **Stderr (FD 2)**: Application logs (`info!`, `warn!`, `error!`, `debug!`, `trace!`) write to `stderr`. When executed as a service under `systemd` or another supervisor, `systemd-journald` captures service logs from `stderr` cleanly without visual corruption on `stdout`.
+
+### 7.2 Non-Blocking File Logging
+* Application events are persisted to disk at `/tmp/rulmee.log` (or custom configured paths).
+* File writes use `tracing-appender` for non-blocking I/O to guarantee that logging disk latency never stutters the TUI event loop.
+
+### 7.3 In-App TUI Log Viewer (<kbd>F4</kbd>)
+* Log messages are recorded in a thread-safe, bounded in-memory ring buffer.
+* Pressing <kbd>F4</kbd> within the TUI opens an overlay log inspector, permitting real-time inspection of PAM and session events directly inside the application interface.
+
+### 7.4 Deprecation Warning Standard
+* Fallback paths (such as loading legacy `/etc/lidm/config.ini` or legacy ANSI `.ini` theme files) emit `tracing::warn!` notices.
+* Deprecation logs explicitly advise administrators to update their deployment to `/etc/rulmee/config.toml` or `/etc/rulmee/theme.toml`.

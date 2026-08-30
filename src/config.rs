@@ -235,7 +235,14 @@ impl Config {
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
     {
-        let known_sections = ["colors", "functions", "strings", "behavior", "logging", "auth"];
+        let known_sections = [
+            "colors",
+            "functions",
+            "strings",
+            "behavior",
+            "logging",
+            "auth",
+        ];
         let mut cli_table = toml::Table::new();
         let mut remaining = Vec::new();
 
@@ -256,12 +263,11 @@ impl Config {
                 None => (flag_body, None),
             };
 
-            let (section_candidate, item_candidate) =
-                if let Some(pos) = full_key.find(|c| c == '_' || c == '-') {
-                    (&full_key[..pos], &full_key[pos + 1..])
-                } else {
-                    ("", "")
-                };
+            let (section_candidate, item_candidate) = if let Some(pos) = full_key.find(['_', '-']) {
+                (&full_key[..pos], &full_key[pos + 1..])
+            } else {
+                ("", "")
+            };
 
             let section = section_candidate.to_lowercase();
             let item = item_candidate.to_lowercase().replace('-', "_");
@@ -312,7 +318,7 @@ impl Config {
     pub fn generate_cli_help() -> &'static str {
         static HELP: std::sync::OnceLock<String> = std::sync::OnceLock::new();
         HELP.get_or_init(|| {
-            let default_val = toml::Value::try_from(&Config::default())
+            let default_val = toml::Value::try_from(Config::default())
                 .unwrap_or(toml::Value::Table(toml::Table::new()));
             let mut out = String::from(
                 "Configuration Overrides:\n  Any setting can be overridden via --<section>-<key> <value> or LIDM_<SECTION>_<KEY>=<value>.\n\n",
@@ -370,9 +376,7 @@ impl Config {
                 .display();
             let warn_msg = format!(
                 "Path '{}' not found; falling back to legacy '{}' (deprecated). Please migrate configuration to '{}'.",
-                expected_primary,
-                fallback_path,
-                parent_dir
+                expected_primary, fallback_path, parent_dir
             );
             log::warn!("{}", warn_msg);
             return (fallback_path.to_string(), Some(warn_msg));
@@ -412,7 +416,10 @@ impl Config {
         (config, err_msg)
     }
 
-    pub fn load_with_overrides(conf_path: &str, cli_overrides: Option<toml::Table>) -> (Self, Option<String>) {
+    pub fn load_with_overrides(
+        conf_path: &str,
+        cli_overrides: Option<toml::Table>,
+    ) -> (Self, Option<String>) {
         let (resolved_path, fallback_warning) = Self::resolve_config_path(conf_path);
         let (mut config, err_msg) = if Path::new(&resolved_path).exists() {
             match Self::from_file(&resolved_path) {
@@ -458,19 +465,26 @@ impl Config {
         if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME")
             && !xdg.trim().is_empty()
         {
-            return std::path::PathBuf::from(xdg).join("lidm").join("default.toml");
+            return std::path::PathBuf::from(xdg)
+                .join("lidm")
+                .join("default.toml");
         }
 
         if let Ok(home) = std::env::var("HOME")
             && !home.trim().is_empty()
         {
-            return std::path::PathBuf::from(home).join(".config").join("lidm").join("default.toml");
+            return std::path::PathBuf::from(home)
+                .join(".config")
+                .join("lidm")
+                .join("default.toml");
         }
 
         std::path::PathBuf::from("/etc/lidm/default.toml")
     }
 
-    pub fn execute_copy_config(dest: Option<&str>) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    pub fn execute_copy_config(
+        dest: Option<&str>,
+    ) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
         let path = Self::resolve_default_copy_path(dest);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -484,7 +498,6 @@ impl Config {
         Ok(path)
     }
 }
-
 
 fn merge_toml_values(dest: &mut toml::Value, source: toml::Value) {
     match (dest, source) {
@@ -727,28 +740,46 @@ refresh_rate = 150
 
     #[test]
     fn test_box_type_deserialization() {
-        let toml_plain: Config = toml::from_str(r#"[behavior]
-box_type = "plain""#).unwrap();
+        let toml_plain: Config = toml::from_str(
+            r#"[behavior]
+box_type = "plain""#,
+        )
+        .unwrap();
         assert_eq!(toml_plain.behavior.box_type, BoxType::Border);
 
-        let toml_default: Config = toml::from_str(r#"[behavior]
-box_type = "default""#).unwrap();
+        let toml_default: Config = toml::from_str(
+            r#"[behavior]
+box_type = "default""#,
+        )
+        .unwrap();
         assert_eq!(toml_default.behavior.box_type, BoxType::Border);
 
-        let toml_border: Config = toml::from_str(r#"[behavior]
-box_type = "border""#).unwrap();
+        let toml_border: Config = toml::from_str(
+            r#"[behavior]
+box_type = "border""#,
+        )
+        .unwrap();
         assert_eq!(toml_border.behavior.box_type, BoxType::Border);
 
-        let toml_none: Config = toml::from_str(r#"[behavior]
-box_type = "none""#).unwrap();
+        let toml_none: Config = toml::from_str(
+            r#"[behavior]
+box_type = "none""#,
+        )
+        .unwrap();
         assert_eq!(toml_none.behavior.box_type, BoxType::None);
 
-        let toml_rounded: Config = toml::from_str(r#"[behavior]
-box_type = "rounded""#).unwrap();
+        let toml_rounded: Config = toml::from_str(
+            r#"[behavior]
+box_type = "rounded""#,
+        )
+        .unwrap();
         assert_eq!(toml_rounded.behavior.box_type, BoxType::Rounded);
 
-        let toml_block: Config = toml::from_str(r#"[behavior]
-box_type = "block""#).unwrap();
+        let toml_block: Config = toml::from_str(
+            r#"[behavior]
+box_type = "block""#,
+        )
+        .unwrap();
         assert_eq!(toml_block.behavior.box_type, BoxType::Block);
     }
 
@@ -814,12 +845,21 @@ pam_service = "gdm"
         assert_eq!(remaining, vec!["lidm", "-c", "/etc/lidm/default.toml", "2"]);
 
         let behavior = overrides.get("behavior").unwrap().as_table().unwrap();
-        assert_eq!(behavior.get("box_type").unwrap().as_str().unwrap(), "rounded");
-        assert_eq!(behavior.get("refresh_rate").unwrap().as_integer().unwrap(), 250);
-        assert_eq!(behavior.get("show_console").unwrap().as_bool().unwrap(), true);
+        assert_eq!(
+            behavior.get("box_type").unwrap().as_str().unwrap(),
+            "rounded"
+        );
+        assert_eq!(
+            behavior.get("refresh_rate").unwrap().as_integer().unwrap(),
+            250
+        );
+        assert!(behavior.get("show_console").unwrap().as_bool().unwrap());
 
         let auth = overrides.get("auth").unwrap().as_table().unwrap();
-        assert_eq!(auth.get("pam_service").unwrap().as_str().unwrap(), "custom-pam");
+        assert_eq!(
+            auth.get("pam_service").unwrap().as_str().unwrap(),
+            "custom-pam"
+        );
     }
 
     #[test]
@@ -841,10 +881,10 @@ pam_service = "gdm"
         assert_eq!(sources.len(), 2);
         assert_eq!(sources[0].as_str().unwrap(), "/etc/profile");
         assert_eq!(sources[1].as_str().unwrap(), "/etc/environment");
-        assert_eq!(behavior.get("include_defshell").unwrap().as_bool().unwrap(), false);
+        assert!(!behavior.get("include_defshell").unwrap().as_bool().unwrap());
 
         let logging = overrides.get("logging").unwrap().as_table().unwrap();
-        assert_eq!(logging.get("stdout").unwrap().as_bool().unwrap(), true);
+        assert!(logging.get("stdout").unwrap().as_bool().unwrap());
     }
 
     #[test]
@@ -853,7 +893,10 @@ pam_service = "gdm"
         let mut table = toml::Table::new();
         let mut behavior = toml::Table::new();
         behavior.insert("refresh_rate".to_string(), toml::Value::Integer(999));
-        behavior.insert("box_type".to_string(), toml::Value::String("block".to_string()));
+        behavior.insert(
+            "box_type".to_string(),
+            toml::Value::String("block".to_string()),
+        );
         table.insert("behavior".to_string(), toml::Value::Table(behavior));
 
         config.apply_table_overrides(table);
@@ -880,7 +923,8 @@ pam_service = "gdm"
         std::fs::write(&legacy_conf, "[behavior]\nshow_console = true\n").unwrap();
 
         let primary_path = "/nonexistent/path/rulmee/default.toml";
-        let (cfg, warning) = Config::load_with_fallback(primary_path, legacy_conf.to_str().unwrap(), None);
+        let (cfg, warning) =
+            Config::load_with_fallback(primary_path, legacy_conf.to_str().unwrap(), None);
         assert!(cfg.behavior.show_console);
         assert!(warning.is_some());
         let warn_msg = warning.unwrap();
@@ -940,7 +984,3 @@ pam_service = "gdm"
         assert_eq!(resolved, "/some/arbitrary/path.toml");
     }
 }
-
-
-
-

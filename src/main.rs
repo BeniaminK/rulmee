@@ -3,19 +3,19 @@ mod colors;
 mod config;
 mod console;
 mod exec;
+mod launch_state;
 mod legacy_ini;
 mod logging;
 mod session;
+mod signal_handler;
 mod sys;
 mod theme;
 mod ui;
 mod users;
 mod vt;
-mod launch_state;
-mod signal_handler;
 
 use crate::session::SessionType;
-use crate::ui::{LoginRequest, UIContext, UIResult, UI};
+use crate::ui::{LoginRequest, UI, UIContext, UIResult};
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 use std::ffi::c_int;
@@ -25,7 +25,9 @@ use uzers::os::unix::UserExt;
 pub enum Commands {
     #[command(about = "Copy default configuration to local or specified config file")]
     CopyConfig {
-        #[arg(help = "Destination path for the configuration file [default: ~/.config/lidm/default.toml]")]
+        #[arg(
+            help = "Destination path for the configuration file [default: ~/.config/lidm/default.toml]"
+        )]
         dest: Option<String>,
     },
 }
@@ -51,7 +53,7 @@ pub struct Args {
 
     #[arg(help = "VT number to switch to")]
     pub vt: Option<c_int>,
-    
+
     #[arg(
         short = 'c',
         long = "config",
@@ -76,7 +78,11 @@ pub struct SessionSelection {
     pub desktop_names: Option<String>,
 }
 
-pub fn resolve_user(users: &[users::LocalUser], user_idx: usize, custom_user: String) -> UserSelection {
+pub fn resolve_user(
+    users: &[users::LocalUser],
+    user_idx: usize,
+    custom_user: String,
+) -> UserSelection {
     if user_idx < users.len() && custom_user.is_empty() {
         UserSelection {
             username: users[user_idx].username.clone(),
@@ -133,10 +139,7 @@ pub struct LoginContext<'a> {
     pub bypass_shell_login: bool,
 }
 
-pub fn handle_login(
-    request: &LoginRequest,
-    ctx: &LoginContext,
-) -> Result<(), auth::AuthError> {
+pub fn handle_login(request: &LoginRequest, ctx: &LoginContext) -> Result<(), auth::AuthError> {
     let user_sel = resolve_user(ctx.users, request.user_idx, request.custom_user.clone());
     let session_sel = resolve_session(
         ctx.sessions,
@@ -150,7 +153,11 @@ pub fn handle_login(
         session_opt: session_sel.name.clone(),
     });
 
-    let mut auth_session = auth::authenticate(&user_sel.username, &request.password, &ctx.config.auth.pam_service)?;
+    let mut auth_session = auth::authenticate(
+        &user_sel.username,
+        &request.password,
+        &ctx.config.auth.pam_service,
+    )?;
 
     let Some(u) = uzers::get_user_by_name(&user_sel.username) else {
         eprintln!("User not found in system: {}", user_sel.username);
@@ -161,7 +168,11 @@ pub fn handle_login(
     let home_dir = u.home_dir().to_string_lossy().into_owned();
     let uid = u.uid();
     let gid = u.primary_group_id();
-    let session_type_str = if session_sel.is_xorg { "x11" } else { "wayland" };
+    let session_type_str = if session_sel.is_xorg {
+        "x11"
+    } else {
+        "wayland"
+    };
 
     let env_opts = exec::EnvironmentOptions {
         pam_env: &auth_session.env,
@@ -203,7 +214,10 @@ fn main() {
     if let Some(Commands::CopyConfig { ref dest }) = args.command {
         match config::Config::execute_copy_config(dest.as_deref()) {
             Ok(path) => {
-                println!("Default configuration successfully copied to '{}'.", path.display());
+                println!(
+                    "Default configuration successfully copied to '{}'.",
+                    path.display()
+                );
                 std::process::exit(0);
             }
             Err(e) => {
@@ -217,24 +231,26 @@ fn main() {
         eprintln!("Warning: Failed to setup signal handler: {}", e);
     }
 
-    let console_buffer: console::ConsoleBuffer = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::with_capacity(50)));
+    let console_buffer: console::ConsoleBuffer = std::sync::Arc::new(std::sync::Mutex::new(
+        std::collections::VecDeque::with_capacity(50),
+    ));
 
     let mut pam_messages = Vec::new();
     let mut auth_failed = false;
 
     loop {
-
         // Load config
         let conf_path = args.conf_path.clone();
         let (config, config_err) = config::Config::load(&args, Some(cli_overrides.clone()));
 
-        let _log_guard = match logging::initialize_logging(&config.logging, Some(console_buffer.clone())) {
-            Ok(guard) => Some(guard),
-            Err(e) => {
-                eprintln!("Failed to initialize logging: {}", e);
-                None
-            }
-        };
+        let _log_guard =
+            match logging::initialize_logging(&config.logging, Some(console_buffer.clone())) {
+                Ok(guard) => Some(guard),
+                Err(e) => {
+                    eprintln!("Failed to initialize logging: {}", e);
+                    None
+                }
+            };
 
         info!("Loading configuration from: {}", conf_path);
         if let Some(err) = config_err {
@@ -259,21 +275,25 @@ fn main() {
 
         let initial_state = launch_state::read_launch_state();
         let (initial_user, initial_session) = match &initial_state {
-            Some(state) => (Some(state.username.as_str()), Some(state.session_opt.as_str())),
+            Some(state) => (
+                Some(state.username.as_str()),
+                Some(state.session_opt.as_str()),
+            ),
             None => (None, None),
         };
 
         // Start console interceptor (always, to prevent TUI corruption)
-        let _console_interceptor = match console::ConsoleInterceptor::intercept(console_buffer.clone()) {
-            Ok(ci) => {
-                info!("Console output intercepted");
-                Some(ci)
-            }
-            Err(e) => {
-                warn!("Could not intercept console: {} (continuing without)", e);
-                None
-            }
-        };
+        let _console_interceptor =
+            match console::ConsoleInterceptor::intercept(console_buffer.clone()) {
+                Ok(ci) => {
+                    info!("Console output intercepted");
+                    Some(ci)
+                }
+                Err(e) => {
+                    warn!("Could not intercept console: {} (continuing without)", e);
+                    None
+                }
+            };
         let bypass_shell_login = config.behavior.bypass_shell_login;
 
         let mut ui = UI::new(UIContext {
@@ -454,14 +474,21 @@ mod tests {
     fn test_full_cli_args_parsing_and_config_apply() {
         let input_args = vec![
             "lidm",
-            "--behavior-box-type", "block",
-            "--behavior-refresh-rate", "450",
-            "--behavior_bypass_shell_login", "true",
+            "--behavior-box-type",
+            "block",
+            "--behavior-refresh-rate",
+            "450",
+            "--behavior_bypass_shell_login",
+            "true",
             "--behavior-show-console",
-            "--logging-level", "warn",
-            "--auth-pam-service", "test-pam",
-            "--strings-f-poweroff", "shutdown",
-            "-c", "/nonexistent.toml",
+            "--logging-level",
+            "warn",
+            "--auth-pam-service",
+            "test-pam",
+            "--strings-f-poweroff",
+            "shutdown",
+            "-c",
+            "/nonexistent.toml",
             "3",
         ];
 
@@ -534,5 +561,3 @@ mod tests {
         }
     }
 }
-
-

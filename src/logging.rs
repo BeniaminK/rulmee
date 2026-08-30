@@ -1,14 +1,14 @@
+use crate::config::LoggingConfig;
+use crate::console::ConsoleBuffer;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
+    EnvFilter,
     fmt::{self, writer::MakeWriter},
     layer::SubscriberExt,
     util::SubscriberInitExt,
-    EnvFilter,
 };
-use crate::config::LoggingConfig;
-use crate::console::ConsoleBuffer;
 
 const DEFAULT_LOG_FILE: &str = "/tmp/lidm.log";
 
@@ -86,15 +86,11 @@ pub fn initialize_logging(
     let _ = tracing_log::LogTracer::init();
 
     let path = resolve_log_path(Some(&log_cfg.file));
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)?;
+    let file = OpenOptions::new().create(true).append(true).open(&path)?;
 
     let (non_blocking_file, guard) = tracing_appender::non_blocking(file);
 
-    let env_filter = EnvFilter::try_new(&log_cfg.level)
-        .unwrap_or_else(|_| EnvFilter::new("debug"));
+    let env_filter = EnvFilter::try_new(&log_cfg.level).unwrap_or_else(|_| EnvFilter::new("debug"));
 
     let file_layer = fmt::layer()
         .with_writer(non_blocking_file)
@@ -200,6 +196,3 @@ mod tests {
         tracing::error!("This is ERROR (file / stdout)");
     }
 }
-
-
-

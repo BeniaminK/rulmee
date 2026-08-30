@@ -14,7 +14,10 @@ pub fn read_launch_state() -> Option<LaunchState> {
     let mut lines = content.lines();
     let username = lines.next()?.to_string();
     let session_opt = lines.next()?.to_string();
-    Some(LaunchState { username, session_opt })
+    Some(LaunchState {
+        username,
+        session_opt,
+    })
 }
 
 pub fn write_launch_state(state: &LaunchState) -> std::io::Result<()> {

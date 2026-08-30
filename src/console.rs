@@ -26,8 +26,7 @@ impl ConsoleInterceptor {
     /// Opens a pty, redirects /dev/console output via TIOCCONS and process stdout/stderr
     /// via dup2, and spawns a background thread to read captured messages.
     pub fn intercept(buffer: ConsoleBuffer) -> io::Result<Self> {
-        let pty = openpty(None, None)
-            .map_err(|e| io::Error::other(format!("openpty: {}", e)))?;
+        let pty = openpty(None, None).map_err(|e| io::Error::other(format!("openpty: {}", e)))?;
 
         let slave_fd = pty.slave.as_raw_fd();
 
@@ -122,7 +121,10 @@ mod tests {
             while start.elapsed() < std::time::Duration::from_millis(300) {
                 {
                     let lines = buffer.lock().unwrap();
-                    if lines.iter().any(|l| l.contains("test_captured_stderr_line")) {
+                    if lines
+                        .iter()
+                        .any(|l| l.contains("test_captured_stderr_line"))
+                    {
                         return;
                     }
                 }
@@ -132,7 +134,9 @@ mod tests {
 
         let lines = buffer.lock().unwrap();
         assert!(
-            lines.iter().any(|l| l.contains("test_captured_stderr_line")),
+            lines
+                .iter()
+                .any(|l| l.contains("test_captured_stderr_line")),
             "ConsoleInterceptor should capture process stderr into console_buffer"
         );
     }

@@ -1,89 +1,52 @@
-# Introduction
+# Rulmee Project Structure & Architecture
 
-This file aims to explain the basic project structure and some code conventions
-and patterns used for contributors. If you plan on contributing a considerable
-amount of code, please read this thoroughly to keep the project behavior
-consistent.
+This document describes the codebase structure, module organization, and development patterns for **Rulmee** (RUst Login ManagEEr).
 
-Even if your changes are not very related to the code, this guide can help to
-understand how they can be related to the rest of the project and what side
-changes it can require.
+---
 
-# Structure
+## Codebase Organization
 
-The file structure is very simple, you have `.c` files in `src/` with their
-header `.h` counterpart in `include/`, they are listed in the `Makefile` and
-built all together on the same layer.
+Rulmee is organized into clean, single-responsibility Rust modules in `src/`:
 
-Each file contains functions aimed to provide some specialized behavior, they
-tend to follow a common prefix (like `vec_` for vector functions) to avoid name
-collisions with themselves.
-
-## Important Files
-
-The `main.c` of course provides the entry point of the program, then each file
-has special functionality, but a special one is `util.h`, is linked with almost
-every file and provides some shared utilities to dealing with UTF-8, dynamic
-Vectors and other stuff.
-
-`log.c` is also an important file as it provides logging utilities for
-debugging, there's no need to deal with it's initialization, it behaves just
-like standard printing utilities but integrated into the configured logfile.
-
-# Debugging
-
-The log module can be easily used by just setting up the `LIDM_LOG`
-environmental variable to the logs output path.
-
-# Header Files
-
-But what if you create a new file? It's important that the definitions are only
-evaluated once by the compiler, even if they are included by several files. For
-this, you can use this simple trick (assume this is for a file named
-`mylib.h`):
-
-```h
-#ifndef MYLIBH_
-#define MYLIBH_
-
-// library contents
-// ...
-
-#endif
+```
+src/
+├── main.rs         # Application entry point, CLI parsing, event loop orchestration
+├── args.rs         # Command-line argument parsing and dynamic overrides (--set)
+├── config.rs       # TOML configuration loader, fallbacks, and validation
+├── theme.rs        # Theme discovery, TOML theme parsing, and legacy INI converter
+├── legacy_ini.rs   # Deprecated INI theme support and migration warnings
+├── logging.rs      # Tracing subscriber setup (stderr, /tmp/rulmee.log, TUI buffer)
+├── pam.rs          # Linux-PAM authentication lifecycle and privilege dropping
+├── session.rs      # Freedesktop .desktop session discovery (Wayland/X11/Shell)
+└── ui/             # Ratatui TUI rendering, keybindings, and log overlay viewer
 ```
 
-It's also a good idea to include brief comments above functions if it's not
-evident what they do and name all parameters.
+---
 
-# Nullability Checks
+## Key Modules
 
-Nullability checks are not really enforced in the code but it's never a bad
-idea to include them, however, `gcc` doesn't support them under certain
-conditions.
+### `main.rs` & `args.rs`
+Handles program initialization, command-line flags, configuration merging, terminal initialization via Crossterm, and the main event loop.
 
-For this you can use `NULLABLE`, `NNULLABLE` and `UNULLABLE` macros from
-`"macros.h"` to conditionally include `_Nullable`, `_Nonnull` and
-`_Null-unspecified` respectively.
+### `config.rs` & `theme.rs`
+Loads TOML configuration files (`/etc/rulmee/config.toml` and `theme.toml`). If primary configs are not found, falls back to `/etc/lidm/config.ini` and legacy INI themes with deprecation warnings.
 
-# Handling & Support
+### `logging.rs`
+Configures a multi-destination `tracing` subscriber:
+- **`stderr`**: Routed to `systemd-journald` without stdout corruption.
+- **Log File**: Async file appender writing to `/tmp/rulmee.log`.
+- **TUI Ring Buffer**: In-memory ring buffer powering the <kbd>F4</kbd> live log overlay.
 
-Every function should properly handle allocation failures (avoid them with
-stack arrays where possible), support UTF-8 strings, use the `log` module
-instead of printing to stdout (messing with the state of the ui) and free all
-lost memory (if it can be lost before reaching the final stage where it execs
-another program, I'm fine with not freeing memory still reachable at the end).
+### `pam.rs`
+Manages the 10-step PAM authentication flow and child privilege dropping (`setgid` $\rightarrow$ `initgroups` $\rightarrow$ `setuid` $\rightarrow$ `chdir`).
 
-# Code format, style and linting
+### `session.rs`
+Scans `/usr/share/xsessions` and `/usr/share/wayland-sessions` to build available desktop session descriptors.
 
-Be reasonable and follow `clang-format` and `clang-tidy` rules. `clang-tidy`
-can be quite pedantic with the current primitive rules, so feel free to use
-`LINTIGNORE` or discuss if said rule should be enforced in first place.
+---
 
-Also avoid grammar typos and for shell scripts use `shellcheck`, you can run
-this checks with `make pre-commit` if you have the required tools.
+## Development & Code Style
 
-# Documentation
-
-Please, also check if there's documentation related to the feature/changes you
-are implementing, could be on markdown or manpages, if there is and you have
-some spare time, it's really helpful to update it; although not enforced.
+- **Formatting**: Format code using `cargo fmt --all`.
+- **Linting**: Pass Clippy without warnings using `cargo clippy --all-targets --all-features -- -D warnings`.
+- **Testing**: Run unit and integration tests with `cargo test`.

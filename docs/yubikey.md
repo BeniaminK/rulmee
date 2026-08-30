@@ -1,25 +1,29 @@
-# Yubikeys
+# YubiKey & FIDO Authentication Guide
 
-Quick reference explaining how yubikeys work for now.
+This document explains how to set up YubiKey / FIDO hardware authentication with **Rulmee**.
 
-# Enable
+## Enabling YubiKey Authentication
 
-Yubikeys are disabled by default, to enable them activate a keybinding for it (`[functions] fido`) in the config file.
+YubiKey authentication is supported via `pam_u2f`.
 
-Note that pressing this configured keybinding has no difference from trying to log in with an empty password, there's virtually no difference.
+1. Ensure `pam_u2f` is installed and key associations are generated using `pamu2fcfg`.
+2. Configure a keybinding for FIDO authentication in `/etc/rulmee/config.toml`:
 
-`pam_u2f` must be configured with a registered key (`pamu2fcfg`).
+```toml
+[functions]
+fido = "F2"
+```
 
-# Extra
+3. Pressing the designated keybinding triggers the PAM FIDO verification process.
 
-All my yubikey knowledge comes from the [pr that implemented this](https://github.com/javalsai/lidm/pull/89), please refer to it for extra details. Contributions to this documentation are welcome (explaining more in detail, potential issues... really anything that improves this).
+## Sample PAM Module Configuration
 
-Allegedly this pam module configuration should work:
+Add the `pam_u2f.so` module to your PAM configuration stack (e.g. `/etc/pam.d/rulmee` or `/etc/pam.d/login`):
 
 ```pam
 #%PAM-1.0
 
-auth sufficient pam_u2f.so cue
+auth       sufficient   pam_u2f.so cue
 auth       requisite    pam_nologin.so
 auth       include      system-local-login
 account    include      system-local-login
@@ -27,4 +31,4 @@ session    include      system-local-login
 password   include      system-local-login
 ```
 
-Also, I recommend giving the [arch wiki](https://wiki.archlinux.org/title/YubiKey) a read anyways.
+For detailed setup options, consult the [Arch Linux YubiKey Wiki](https://wiki.archlinux.org/title/YubiKey).

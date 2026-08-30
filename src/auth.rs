@@ -1,6 +1,6 @@
+use pam_client2::{Context, ConversationHandler, ErrorCode, Flag, SessionToken};
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use pam_client2::{Context, ConversationHandler, ErrorCode, Flag, SessionToken};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PamMessageType {
@@ -219,5 +219,3 @@ mod tests {
         );
     }
 }
-
-

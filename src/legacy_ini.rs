@@ -4,7 +4,11 @@ use std::path::Path;
 /// Parses a legacy ANSI SGR escape code string (e.g. `"1;4;38;2;255;174;66"`) into a `ThemeStyle`.
 pub fn parse_ansi_style(sgr: &str) -> ThemeStyle {
     let sgr = sgr.trim().trim_matches('"').trim_matches('\'');
-    let tokens: Vec<&str> = sgr.split(';').map(str::trim).filter(|s| !s.is_empty()).collect();
+    let tokens: Vec<&str> = sgr
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
     let mut style = ThemeStyle::default();
     let mut i = 0;
 
@@ -92,31 +96,105 @@ pub fn parse_ansi_style(sgr: &str) -> ThemeStyle {
                 style.bg = Some(tokens[i + 2].to_string());
                 i += 3;
             }
-            "30" => { style.color = Some("black".to_string()); i += 1; }
-            "31" => { style.color = Some("red".to_string()); i += 1; }
-            "32" => { style.color = Some("green".to_string()); i += 1; }
-            "33" => { style.color = Some("yellow".to_string()); i += 1; }
-            "34" => { style.color = Some("blue".to_string()); i += 1; }
-            "35" => { style.color = Some("magenta".to_string()); i += 1; }
-            "36" => { style.color = Some("cyan".to_string()); i += 1; }
-            "37" => { style.color = Some("white".to_string()); i += 1; }
-            "40" => { style.bg = Some("black".to_string()); i += 1; }
-            "41" => { style.bg = Some("red".to_string()); i += 1; }
-            "42" => { style.bg = Some("green".to_string()); i += 1; }
-            "43" => { style.bg = Some("yellow".to_string()); i += 1; }
-            "44" => { style.bg = Some("blue".to_string()); i += 1; }
-            "45" => { style.bg = Some("magenta".to_string()); i += 1; }
-            "46" => { style.bg = Some("cyan".to_string()); i += 1; }
-            "47" => { style.bg = Some("white".to_string()); i += 1; }
-            "90" => { style.color = Some("darkgray".to_string()); i += 1; }
-            "91" => { style.color = Some("lightred".to_string()); i += 1; }
-            "92" => { style.color = Some("lightgreen".to_string()); i += 1; }
-            "93" => { style.color = Some("lightyellow".to_string()); i += 1; }
-            "94" => { style.color = Some("lightblue".to_string()); i += 1; }
-            "95" => { style.color = Some("lightmagenta".to_string()); i += 1; }
-            "96" => { style.color = Some("lightcyan".to_string()); i += 1; }
-            "97" => { style.color = Some("white".to_string()); i += 1; }
-            _ => { i += 1; }
+            "30" => {
+                style.color = Some("black".to_string());
+                i += 1;
+            }
+            "31" => {
+                style.color = Some("red".to_string());
+                i += 1;
+            }
+            "32" => {
+                style.color = Some("green".to_string());
+                i += 1;
+            }
+            "33" => {
+                style.color = Some("yellow".to_string());
+                i += 1;
+            }
+            "34" => {
+                style.color = Some("blue".to_string());
+                i += 1;
+            }
+            "35" => {
+                style.color = Some("magenta".to_string());
+                i += 1;
+            }
+            "36" => {
+                style.color = Some("cyan".to_string());
+                i += 1;
+            }
+            "37" => {
+                style.color = Some("white".to_string());
+                i += 1;
+            }
+            "40" => {
+                style.bg = Some("black".to_string());
+                i += 1;
+            }
+            "41" => {
+                style.bg = Some("red".to_string());
+                i += 1;
+            }
+            "42" => {
+                style.bg = Some("green".to_string());
+                i += 1;
+            }
+            "43" => {
+                style.bg = Some("yellow".to_string());
+                i += 1;
+            }
+            "44" => {
+                style.bg = Some("blue".to_string());
+                i += 1;
+            }
+            "45" => {
+                style.bg = Some("magenta".to_string());
+                i += 1;
+            }
+            "46" => {
+                style.bg = Some("cyan".to_string());
+                i += 1;
+            }
+            "47" => {
+                style.bg = Some("white".to_string());
+                i += 1;
+            }
+            "90" => {
+                style.color = Some("darkgray".to_string());
+                i += 1;
+            }
+            "91" => {
+                style.color = Some("lightred".to_string());
+                i += 1;
+            }
+            "92" => {
+                style.color = Some("lightgreen".to_string());
+                i += 1;
+            }
+            "93" => {
+                style.color = Some("lightyellow".to_string());
+                i += 1;
+            }
+            "94" => {
+                style.color = Some("lightblue".to_string());
+                i += 1;
+            }
+            "95" => {
+                style.color = Some("lightmagenta".to_string());
+                i += 1;
+            }
+            "96" => {
+                style.color = Some("lightcyan".to_string());
+                i += 1;
+            }
+            "97" => {
+                style.color = Some("white".to_string());
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
         }
     }
 
@@ -147,9 +225,7 @@ pub fn load_legacy_ini_theme(path: &Path) -> Result<Colors, String> {
             continue;
         }
 
-        if in_colors_section
-            && let Some((key, val)) = line.split_once('=')
-        {
+        if in_colors_section && let Some((key, val)) = line.split_once('=') {
             let key = key.trim().to_lowercase();
             let style = parse_ansi_style(val);
 

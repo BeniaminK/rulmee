@@ -1,5 +1,5 @@
-use std::fs;
 use freedesktop::ApplicationEntry;
+use std::fs;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionType {
@@ -158,10 +158,7 @@ mod tests {
 
     #[test]
     fn test_parse_exec_string_escaped_spaces() {
-        assert_eq!(
-            parse_exec_string("my\\ app --arg"),
-            vec!["my app", "--arg"]
-        );
+        assert_eq!(parse_exec_string("my\\ app --arg"), vec!["my app", "--arg"]);
     }
 
     #[test]
@@ -178,10 +175,7 @@ mod tests {
 
     #[test]
     fn test_parse_exec_string_literal_percent() {
-        assert_eq!(
-            parse_exec_string("echo %%USER%%"),
-            vec!["echo", "%USER%"]
-        );
+        assert_eq!(parse_exec_string("echo %%USER%%"), vec!["echo", "%USER%"]);
     }
 
     #[test]
@@ -198,10 +192,7 @@ mod tests {
             parse_exec_string("app --title=\"100%\" --next"),
             vec!["app", "--title=100%", "--next"]
         );
-        assert_eq!(
-            parse_exec_string("echo % 100"),
-            vec!["echo", "%", "100"]
-        );
+        assert_eq!(parse_exec_string("echo % 100"), vec!["echo", "%", "100"]);
     }
 
     #[test]
@@ -223,4 +214,3 @@ mod tests {
         }
     }
 }
-

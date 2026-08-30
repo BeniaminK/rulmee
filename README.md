@@ -1,176 +1,182 @@
-[![GitHub license](https://badgen.net/github/license/javalsai/lidm)](https://github.com/javalsai/lidm/blob/master/LICENSE)
-[![GitHub branches](https://badgen.net/github/branches/javalsai/lidm)](https://github.com/javalsai/lidm)
-[![Latest Release](https://badgen.net/github/release/javalsai/lidm)](https://github.com/javalsai/lidm/releases)
+[![GitHub license](https://badgen.net/github/license/BeniaminK/rulmee)](https://github.com/BeniaminK/rulmee/blob/main/LICENSE)
+[![GitHub branches](https://badgen.net/github/branches/BeniaminK/rulmee)](https://github.com/BeniaminK/rulmee)
+[![Latest Release](https://badgen.net/github/release/BeniaminK/rulmee)](https://github.com/BeniaminK/rulmee/releases)
 
-# LiDM
+# Rulmee (RUst Login ManagEEr)
 
-LiDM is a really light unix [login manager](https://en.wikipedia.org/wiki/Login_manager) made in C, highly customizable and held together by hopes and prayers 🙏.
+**Rulmee** is a lightweight, secure, and highly customizable Terminal User Interface (TUI) display manager written in Rust.
 
-LiDM is like any [Display Manager](https://en.wikipedia.org/wiki/X_display_manager) you have seen such as SDDM or GDM but without using any X.org graphics at all. Instead being a purely [text based interface](https://en.wikipedia.org/wiki/Text-based_user_interface) inside your terminal/TTY.
+Like traditional display managers (such as SDDM or GDM), Rulmee handles user authentication, session discovery, and desktop launching—all within a text-based TUI directly on Linux virtual terminals (TTYs).
 
 ![demo gif](assets/media/lidm.gif)
 
-<blockquote><details>
-<summary><i>
-shown as in a featured terminal emulator, actual linux console doesn't support as much color and decorations
-</i></summary>
-
-If you want to add fancy color and font support to your TTYs you can try wrapping lidm in [`kmscon`](https://wiki.archlinux.org/title/KMSCON). (edit appropriate service files). e.g:
-
-```sh
-kmscon -l --vt /dev/tty7 --font-name "Cascadia Code" -- /usr/bin/lidm
-```
-
-Kmscon is NOT officially supported so you are on your own when trying this, [according to the arch wiki](https://wiki.archlinux.org/title/KMSCON#Window_managers_cannot_be_started_from_KMS_console) it's not possible to start window managers if you do this.
-
-But [according to farouk](https://github.com/javalsai/lidm/issues/91#issuecomment-3708503568) you can make it work if you tell kmscon to work in `no-drm` mode. There's still input grabbing issues which cause <kbd><kbd>Ctrl</kbd> + <kbd>C</kbd></kbd> to kill lidm, they are likely fixable though.
-
-</details></blockquote>
-
-> _however, all colors and strings are fully customizable_
-
-## Features
-
-- Simple as C, meant to depend only on standard libc and basic unix system headers.
-- Fully customizable: ALL strings, colors (with its ANSI keys) and most behavior.
-- Experimental Xorg support[\*](https://github.com/javalsai/lidm/pull/80?#issuecomment-3764073217) and wayland sessions, while supporting the default user shell (if enabled in config)
-- Init agnostic (systemd, dinit, runit, openrc and s6).
-- Supports [fido yubikeys](./docs/yubikey.md) (via pam_u2f).
-
-# Table of Contents
-
-- [Ideology](#ideology)
-- [Usage](#usage)
-  - [Arguments](#arguments)
-  - [Commands](#commands)
-  - [Program](#program)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuring](#configuring)
-- [PAM](#pam)
-- [Logging](#logging--systemd-architecture)
-- [Contributing](#contributing)
-- [License](#license)
-- [Inspiration](#inspiration)
-- [Contributors](#contributors)
-
-# Ideology
-
-We all know that the most important thing in a project is the ideology of the author and the movements he wants to support, so [**#stopchatcontrol**](https://stopchatcontrol.eu).
-
-[ ![stopchatcontrol](https://stopchatcontrol.eu/wp-content/uploads/2023/09/1-1-1024x1024.png) ](https://stopchatcontrol.eu)
-
-> _there's also a [change.org post](https://www.change.org/p/stoppt-die-chatkontrolle-grundrechte-gelten-auch-im-netz)._
-
-# Usage
-
-### Arguments
-
-If a single argument is provided (don't even do `--` or standard unix parsing...), it switches to said tty number at startup. Used (at least) by most service files.
-
-### Commands
-
-- `lidm copy-config [DEST]`: Copy the default configuration to your user config directory (`~/.config/lidm/default.toml`) or a specified destination path.
-
-```bash
-# Copy to default user config location (~/.config/lidm/default.toml)
-lidm copy-config
-
-# Copy to custom path
-lidm copy-config /etc/lidm/default.toml
-```
-
-### Program
-
-Base (mostly intuitive):
-
-- Use arrow keys to navigate the inputs and type over any of them to override the default value.
-- Enter will just attempt to login.
-- If you are focused on an edited input, horizontal arrow keys will attempt to move across the text just as expected.
-
-On top of that:
-
-- Using the horizontal arrow keys if the focused input is not in text mode or the movement would overflow the input. It will try to change in such direction the option of session or the user.
-- Pressing <kbd>ESC</kbd> and then horizontal arrows will force to change the option of the focused input even if it's in edit mode.
-- Editing an option on a user or a shell session will put you in edit mode appending after the original value.
-
-# Requirements
-
-- Make (Also optional, but does things automatically, make sure `gcc` and `mkdir -p` work as expected).
-- A compiler like `cc`, `gcc` or `clang`. Make sure to use the desired `CC=<compiler>` on the `make` command.
-- PAM library, used for user authentication, just what `login` or `su` use internally. Don't worry, it's surely pre-installed.
-
-# Installation
-
-Check the [installation guide](./docs/INSTALL.md) to use your preferred installation source.
-
-<details>
-
-<summary>Packagers read here!!</summary>
-
-If you are a package maintainer or are willing to become one, please read [the packagers guide](./docs/PACKAGERS.md).
-
-</details>
-
-# Configuring
-
-Copy any `.ini` file from [`themes/`](./themes/) (`default.ini` will always be updated) to `/etc/lidm.ini` and/or configure it to your liking. You can also set `LIDM_CONF` environment variable to specify a config path.
-
-The format attempts to mimic the TOML format. Escape sequences like `\x1b` are allowed as well as comments and empty lines.
-
-Colors are gonna be put inside `\x1b[...m`, if you don't know what this is check [an ANSI table](https://gist.github.com/JBlond/2fea43a3049b38287e5e9cefc87b2124). Mind that `\x1b` is the same as `\e`, `\033` and several other representations.
-
-> [!NOTE]
-> The default `fg` style should disable decorators set up in other elements (cursive, underline...). It's just adding 20 to the number, so if an underline is 4, disabling it is done with 24.
-
-> [!TIP]
-> If you don't like seeing an element, you can change the fg color of it to be the same as the bg, making it invisible.
-
-# PAM
-
-If your distribution does not use the standard PAM service name `login` (`/etc/pam.d/login`) for its PAM services or if you want to use another PAM file, simply set the `LIDM_PAM_SERVICE` env variable to your PAM service name.
-
-When the env variable is empty it defaults to the `login` PAM service or whatever fallback your distribution packager has defined during compilation.
-
-# Logging & Systemd Architecture
-
-LiDM uses a multi-destination logging system specifically architected to prevent TUI screen corruption:
-
-- **Log File (`/tmp/lidm.log`)**: Full application logs (`info!`, `warn!`, `error!`) are written to file.
-- **In-App Console Viewer (<kbd>F4</kbd>)**: Log messages are captured into an internal ring buffer for live inspection inside the TUI by pressing <kbd>F4</kbd>.
-- **Systemd Journal Integration (`stderr` / FD 2)**: External service logging is routed strictly to `stderr` (FD 2). Because Ratatui renders the TUI interface on `stdout` (FD 1), outputting process logs to `stderr` allows `systemd-journald` to collect full service logs without corrupting or interleaving text over the TUI display.
-
-# Contributing
-
-If you want to contribute check the [contribution guide](docs/CONTRIBUTING.md).
-
-# License
-
-This project is licensed under the GNU General Public License v3.0 **only**.
-
-# Inspiration
-
-This project was started after facing some issues building [ly](https://github.com/fairyglade/ly) on an ancient laptop, the UI is heavily inspired by it.
-
-For this reason the project's philosophy is to be simple and minimal, such that even prehistoric hardware is capable of running it.
-
-I forgot what exactly the name came from, but it surely was a mix of a few things so:
-
-- Obviously it's inspired by `ly`. `ly-dm` leads to "lydm".
-- Wow make "lydm" simple with a "y" → "i" transformation.
-- Associate it with the "i" in s**i**mple and other display managers like **Li**ghtDM.
-- And the **la**ptop this project started in has a **lid**.
-
-# Contributors
-
-[![GitHub Contributors](https://contrib.rocks/image?repo=javalsai/lidm&max=20)](https://github.com/javalsai/lidm/graphs/contributors)
-
-[killertofus](https://github.com/killertofus), [deadvey](https://github.com/deadvey), [grialion](https://github.com/grialion/), cerealexperiments\_, [antiz96](https://github.com/Antiz96), [rmntgx](https://github.com/rmntgx) and [more...](https://github.com/javalsai/lidm/graphs/contributors)
-
-With their big or small contributions, every commit has helped in its own way and encouraged me to keep putting my soul into this.
+> _Colors, borders, strings, and keybindings are fully customizable via TOML themes and configuration files._
 
 ---
 
-🌟 Finally, consider starring this repo [or...](https://www.reddit.com/r/github/comments/1l2mchg/is_this_allowed) 🔪
+## Motivation & Architecture Shift
 
-![star-history](https://api.star-history.com/svg?repos=javalsai/lidm&type=Date)
+Rulmee was originally developed in C (formerly known as *LiDM*, "held together by hopes and prayers"). As security, stability, and desktop session complexity grew, the codebase was rewritten from the ground up in Rust as **Rulmee**.
+
+### Why Rust?
+- **Memory Safety & Privilege Isolation**: Display managers execute as root before dropping privileges to spawn user sessions. Rust eliminates entire classes of memory vulnerabilities (buffer overflows, use-after-free, unsafe string parsing) at compile time.
+- **Modern TUI Rendering**: Built on [`ratatui`](https://ratatui.rs) and [`crossterm`](https://crates.io/crates/crossterm), providing clean rendering, double-buffering, and zero terminal screen flicker.
+- **Structured Diagnostics**: Utilizes [`tracing`](https://crates.io/crates/tracing) to separate TUI rendering output (`stdout`) from systemd/journald log records (`stderr`) and live in-app log viewing (<kbd>F4</kbd>).
+- **Type-Safe Configuration**: Migrated from legacy INI files to structured TOML files (`config.toml` & `theme.toml`) with full backward-compatibility deprecation notices.
+
+---
+
+## Features
+
+- **Modern & Memory Safe**: Powered by Rust (2024 edition), `ratatui`, and `nix`.
+- **Freedesktop Compliant**: Discovers Wayland and X11 sessions from `/usr/share/xsessions` and `/usr/share/wayland-sessions`.
+- **Strict Security Boundaries**: Complies with Linux-PAM specifications and POSIX privilege separation (`setgid` $\rightarrow$ `initgroups` $\rightarrow$ `setuid` $\rightarrow$ `chdir`). Root context never evaluates user shell profiles.
+- **Structured TOML Configuration**: Easily configure keybindings, strings, layout, and colors in `/etc/rulmee/config.toml` and `/etc/rulmee/theme.toml`.
+- **Multi-Destination Logging**: Non-corrupting `stderr` (FD 2) logging for `systemd-journald`, file logging to `/tmp/rulmee.log`, and an in-app log inspector (<kbd>F4</kbd>).
+- **YubiKey / FIDO Support**: Hardware key authentication via `pam_u2f`.
+- **Init System Agnostic**: Ready for `systemd`, `dinit`, `runit`, `openrc`, and `s6`.
+
+---
+
+# Table of Contents
+
+- [Motivation & Architecture Shift](#motivation--architecture-shift)
+- [Features](#features)
+- [Usage](#usage)
+  - [CLI Arguments & Overrides](#cli-arguments--overrides)
+  - [Commands](#commands)
+  - [TUI Interface Controls](#tui-interface-controls)
+- [Requirements](#requirements)
+- [Building & Installation](#building--installation)
+- [Configuration](#configuration)
+- [PAM Authentication](#pam-authentication)
+- [Logging & Systemd Architecture](#logging--systemd-architecture)
+- [Standards & Specifications](#standards--specifications)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+# Usage
+
+### CLI Arguments & Overrides
+
+Rulmee supports command-line overrides to update configuration values dynamically at runtime:
+
+```bash
+# Target specific virtual terminal TTY
+rulmee 7
+
+# Dynamic config override
+rulmee --set behavior.include_defshell=true
+```
+
+### Commands
+
+- `rulmee copy-config [DEST]`: Copy the default configuration to your user config directory (`~/.config/rulmee/config.toml`) or a specified destination path.
+
+```bash
+# Copy to default user config location (~/.config/rulmee/config.toml)
+rulmee copy-config
+
+# Copy to custom system path
+rulmee copy-config /etc/rulmee/config.toml
+```
+
+### TUI Interface Controls
+
+- **Navigation**: Use Up/Down arrow keys or <kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd> to move between fields (username, password, session selector, desktop type).
+- **Option Switcher**: Use Left/Right arrow keys on selector fields to cycle available desktop sessions and users.
+- **Log Viewer**: Press <kbd>F4</kbd> anytime to open the live in-app log overlay.
+- **Login**: Press <kbd>Enter</kbd> to authenticate and launch the selected desktop session.
+
+---
+
+# Requirements
+
+- **Rust Toolchain**: `cargo` and `rustc` (edition 2024 / Rust 1.85+).
+- **PAM Library**: Linux-PAM header files (`libpam0g-dev` on Debian/Ubuntu, `pam-devel` on Fedora/Arch/RHEL).
+
+---
+
+# Building & Installation
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/BeniaminK/rulmee.git
+cd rulmee
+
+# Build release binary
+cargo build --release
+```
+
+The compiled binary will be located at `target/release/rulmee`.
+
+### Installation
+
+Install the binary to your system path:
+
+```bash
+cargo install --path .
+```
+
+To install default configuration files, man pages, and service descriptors, consult the [Installation Guide](./docs/INSTALL.md) and [Packagers Guide](./docs/PACKAGERS.md).
+
+---
+
+# Configuration
+
+Rulmee reads configuration from `/etc/rulmee/config.toml` (or user config at `~/.config/rulmee/config.toml`).
+
+Themes are loaded from `/etc/rulmee/theme.toml` or packaged themes in `/usr/share/rulmee/themes/`.
+
+> [!NOTE]
+> **Backward Compatibility**: If `/etc/rulmee/config.toml` is absent, Rulmee temporarily falls back to legacy `/etc/lidm/config.ini` and emits a deprecation warning urging migration to TOML.
+
+---
+
+# PAM Authentication
+
+Rulmee initializes Linux-PAM authentication using the `login` PAM service (`/etc/pam.d/login`) by default. You can override the target service name by setting the `RULMEE_PAM_SERVICE` (or `LIDM_PAM_SERVICE`) environment variable:
+
+```bash
+export RULMEE_PAM_SERVICE="rulmee"
+```
+
+---
+
+# Logging & Systemd Architecture
+
+Rulmee features a multi-destination logging architecture specifically engineered to prevent TUI screen corruption:
+
+- **Journald (`stderr` / FD 2)**: External service logs write to `stderr` (FD 2). Because Ratatui renders the TUI interface on `stdout` (FD 1), process logs are collected by `systemd-journald` cleanly without visual corruption.
+- **Log File (`/tmp/rulmee.log`)**: Non-blocking log persistence using `tracing-appender`.
+- **In-App Console Viewer (<kbd>F4</kbd>)**: Log messages are captured into an internal ring buffer for live inspection inside the TUI by pressing <kbd>F4</kbd>.
+
+For complete technical specifications on stdout/stderr isolation and log event standards, see [STANDARDS.md](./STANDARDS.md).
+
+---
+
+# Standards & Specifications
+
+Rulmee adheres strictly to Linux specifications and POSIX standards for desktop discovery, session lifecycle, and security boundaries.
+
+Read [STANDARDS.md](./STANDARDS.md) for detailed documentation on:
+- Freedesktop Desktop Entry & XDG Base Directory specifications.
+- 10-step Linux-PAM lifecycle management.
+- `systemd-logind` VT and seat integration (`XDG_SEAT`, `XDG_VTNR`, `XDG_SESSION_TYPE`).
+- POSIX privilege dropping sequence (`setgid` $\rightarrow$ `initgroups` $\rightarrow$ `setuid` $\rightarrow$ `chdir`).
+
+---
+
+# Contributing
+
+Contributions are welcome! Please read our [Contribution Guidelines](docs/CONTRIBUTING.md) for details on code formatting (`cargo fmt`), linting (`cargo clippy`), unit tests (`cargo test`), and commit conventions.
+
+---
+
+# License
+
+This project is licensed under the GNU General Public License v3.0 **only**. See [LICENSE](./LICENSE) for details.

@@ -1,10 +1,12 @@
+use nix::unistd::{
+    ForkResult, Gid, Uid, close, fork, getpid, initgroups, read, setgid, setpgid, setuid,
+};
+use std::collections::HashMap;
+use std::ffi::CString;
 use std::ffi::c_int;
 use std::os::unix::io::AsRawFd;
-use nix::unistd::{fork, ForkResult, setuid, setgid, initgroups, setpgid, getpid, Uid, Gid, close, read};
-use std::ffi::CString;
-use std::collections::HashMap;
-use std::process::Command;
 use std::os::unix::process::CommandExt;
+use std::process::Command;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 pub static ACTIVE_CHILD_PGID: AtomicI32 = AtomicI32::new(0);
@@ -108,7 +110,10 @@ pub fn assemble_environment(opts: &EnvironmentOptions) -> HashMap<String, String
     );
 
     // 2. Freedesktop / XDG Standards
-    env.insert("XDG_SESSION_TYPE".to_string(), opts.session_type.to_string());
+    env.insert(
+        "XDG_SESSION_TYPE".to_string(),
+        opts.session_type.to_string(),
+    );
     env.insert("XDG_SESSION_CLASS".to_string(), "user".to_string());
     if let Some(names) = opts.desktop_names {
         env.insert("XDG_CURRENT_DESKTOP".to_string(), names.to_string());
@@ -120,7 +125,12 @@ pub fn assemble_environment(opts: &EnvironmentOptions) -> HashMap<String, String
     }
 
     // 4. Environment Profile Sourcing
-    source_environment_files(&mut env, opts.system_sources, opts.home_dir, opts.user_sources);
+    source_environment_files(
+        &mut env,
+        opts.system_sources,
+        opts.home_dir,
+        opts.user_sources,
+    );
 
     // 5. Optional Display Variable
     if let Some(disp) = opts.display {
@@ -139,7 +149,11 @@ pub fn build_exec_command(
     user_shell: &str,
     bypass_shell_login: bool,
 ) -> (String, Vec<String>) {
-    let shell = if user_shell.is_empty() { "/bin/bash" } else { user_shell };
+    let shell = if user_shell.is_empty() {
+        "/bin/bash"
+    } else {
+        user_shell
+    };
 
     if exec_args.is_empty() {
         return (shell.to_string(), vec!["-l".to_string()]);
@@ -152,7 +166,11 @@ pub fn build_exec_command(
         let full_cmd = quoted_args.join(" ");
         (
             shell.to_string(),
-            vec!["-l".to_string(), "-c".to_string(), format!("exec {}", full_cmd)],
+            vec![
+                "-l".to_string(),
+                "-c".to_string(),
+                format!("exec {}", full_cmd),
+            ],
         )
     }
 }
@@ -212,7 +230,9 @@ fn launch_direct(ctx: &LaunchContext) -> Result<(), String> {
 }
 
 fn launch_xorg(ctx: &LaunchContext) -> Result<(), String> {
-    let vt = ctx.vt.ok_or_else(|| "Xorg requires a VT number (none provided)".to_string())?;
+    let vt = ctx
+        .vt
+        .ok_or_else(|| "Xorg requires a VT number (none provided)".to_string())?;
     let (pipe_read, pipe_write) = nix::unistd::pipe().map_err(|e| format!("Pipe failed: {}", e))?;
 
     match unsafe { fork() } {
@@ -234,7 +254,8 @@ fn launch_xorg(ctx: &LaunchContext) -> Result<(), String> {
             let _ = setpgid(xorg_pid, xorg_pid);
             close(pipe_write.as_raw_fd()).unwrap();
             let mut display_buf = [0u8; 16];
-            let n = read(pipe_read.as_raw_fd(), &mut display_buf).map_err(|e| format!("Read pipe failed: {}", e))?;
+            let n = read(pipe_read.as_raw_fd(), &mut display_buf)
+                .map_err(|e| format!("Read pipe failed: {}", e))?;
             let display_str = std::str::from_utf8(&display_buf[..n]).unwrap().trim();
             let display = format!(":{}", display_str);
 
@@ -250,8 +271,13 @@ fn launch_xorg(ctx: &LaunchContext) -> Result<(), String> {
                     loop {
                         let pid = unsafe { libc::waitpid(-1, &mut status, 0) };
                         if pid == xorg_pid.as_raw() || pid == session_pid.as_raw() {
-                            let to_kill = if pid == xorg_pid.as_raw() { session_pid } else { xorg_pid };
-                            let _ = nix::sys::signal::kill(to_kill, nix::sys::signal::Signal::SIGTERM);
+                            let to_kill = if pid == xorg_pid.as_raw() {
+                                session_pid
+                            } else {
+                                xorg_pid
+                            };
+                            let _ =
+                                nix::sys::signal::kill(to_kill, nix::sys::signal::Signal::SIGTERM);
                             unsafe { libc::waitpid(to_kill.as_raw(), &mut status, 0) };
                             break;
                         }
@@ -294,8 +320,14 @@ mod tests {
         assert_eq!(env.get("LOGNAME").map(|s| s.as_str()), Some("alice"));
         assert_eq!(env.get("HOME").map(|s| s.as_str()), Some("/home/alice"));
         assert_eq!(env.get("SHELL").map(|s| s.as_str()), Some("/bin/zsh"));
-        assert_eq!(env.get("XDG_SESSION_TYPE").map(|s| s.as_str()), Some("wayland"));
-        assert_eq!(env.get("XDG_SESSION_CLASS").map(|s| s.as_str()), Some("user"));
+        assert_eq!(
+            env.get("XDG_SESSION_TYPE").map(|s| s.as_str()),
+            Some("wayland")
+        );
+        assert_eq!(
+            env.get("XDG_SESSION_CLASS").map(|s| s.as_str()),
+            Some("user")
+        );
         assert_eq!(env.get("PAM_VAR").map(|s| s.as_str()), Some("pam_val"));
         assert_eq!(env.get("PATH").map(|s| s.as_str()), Some("/custom/path"));
         assert_eq!(env.get("XDG_CURRENT_DESKTOP"), None);
@@ -316,7 +348,10 @@ mod tests {
             user_sources: &[],
         };
         let env = assemble_environment(&opts);
-        assert_eq!(env.get("XDG_CURRENT_DESKTOP").map(|s| s.as_str()), Some("Sway:Wayland"));
+        assert_eq!(
+            env.get("XDG_CURRENT_DESKTOP").map(|s| s.as_str()),
+            Some("Sway:Wayland")
+        );
     }
 
     #[test]
@@ -338,7 +373,10 @@ INVALID_LINE_NO_EQUALS
 
         assert_eq!(env_map.get("FOO").map(|s| s.as_str()), Some("bar"));
         assert_eq!(env_map.get("BAR").map(|s| s.as_str()), Some("quoted value"));
-        assert_eq!(env_map.get("BAZ").map(|s| s.as_str()), Some("single quoted"));
+        assert_eq!(
+            env_map.get("BAZ").map(|s| s.as_str()),
+            Some("single quoted")
+        );
         assert_eq!(env_map.get("SPACED").map(|s| s.as_str()), Some("trimmed"));
         assert_eq!(env_map.get("INVALID_LINE_NO_EQUALS"), None);
 
@@ -366,7 +404,10 @@ INVALID_LINE_NO_EQUALS
 
         assert_eq!(env.get("SYS_VAR").map(|s| s.as_str()), Some("system"));
         assert_eq!(env.get("USER_VAR").map(|s| s.as_str()), Some("user"));
-        assert_eq!(env.get("OVERRIDE_VAR").map(|s| s.as_str()), Some("user_val"));
+        assert_eq!(
+            env.get("OVERRIDE_VAR").map(|s| s.as_str()),
+            Some("user_val")
+        );
 
         let _ = std::fs::remove_file(sys_file);
         let _ = std::fs::remove_file(user_file);
@@ -400,11 +441,18 @@ INVALID_LINE_NO_EQUALS
 
     #[test]
     fn test_build_exec_command_quoting_and_empty_shell() {
-        let exec_args = vec!["sway".to_string(), "--config".to_string(), "my config.conf".to_string()];
+        let exec_args = vec![
+            "sway".to_string(),
+            "--config".to_string(),
+            "my config.conf".to_string(),
+        ];
         let (prog, args) = build_exec_command(&exec_args, "", false);
 
         assert_eq!(prog, "/bin/bash");
-        assert_eq!(args, vec!["-l", "-c", "exec 'sway' '--config' 'my config.conf'"]);
+        assert_eq!(
+            args,
+            vec!["-l", "-c", "exec 'sway' '--config' 'my config.conf'"]
+        );
     }
 
     #[test]
@@ -427,11 +475,22 @@ INVALID_LINE_NO_EQUALS
     fn test_parse_env_line() {
         assert_eq!(parse_env_line("# comment"), None);
         assert_eq!(parse_env_line("   "), None);
-        assert_eq!(parse_env_line("FOO=bar"), Some(("FOO".to_string(), "bar".to_string())));
-        assert_eq!(parse_env_line("export FOO=\"bar\""), Some(("FOO".to_string(), "bar".to_string())));
-        assert_eq!(parse_env_line("export FOO='bar'"), Some(("FOO".to_string(), "bar".to_string())));
-        assert_eq!(parse_env_line("export\tFOO=bar"), Some(("FOO".to_string(), "bar".to_string())));
+        assert_eq!(
+            parse_env_line("FOO=bar"),
+            Some(("FOO".to_string(), "bar".to_string()))
+        );
+        assert_eq!(
+            parse_env_line("export FOO=\"bar\""),
+            Some(("FOO".to_string(), "bar".to_string()))
+        );
+        assert_eq!(
+            parse_env_line("export FOO='bar'"),
+            Some(("FOO".to_string(), "bar".to_string()))
+        );
+        assert_eq!(
+            parse_env_line("export\tFOO=bar"),
+            Some(("FOO".to_string(), "bar".to_string()))
+        );
         assert_eq!(parse_env_line("INVALID"), None);
     }
 }
-

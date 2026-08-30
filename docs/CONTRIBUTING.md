@@ -1,48 +1,104 @@
-# Contributing
+# Contributing to Rulmee
 
-Contributions are welcome! Here's how you can help:
+Contributions to **Rulmee** (RUst Login ManagEEr) are welcome! This document outlines our development workflow, Rust coding standards, issue reporting process, and pull request procedures.
 
-- [Contributing](#contributing)
-  - [Code](#code)
-  - [Issues](#issues)
-  - [Other](#other)
+---
 
-## Code
+## Table of Contents
 
-For small fixes or incremental improvements simply fork the repo and follow the process below.
+- [Code Guidelines](#code-guidelines)
+  - [Prerequisites](#prerequisites)
+  - [Development Workflow](#development-workflow)
+  - [Code Quality & Formatting](#code-quality--formatting)
+  - [Commit Messages](#commit-messages)
+- [Issue Tracker](#issue-tracker)
+- [Submitting Pull Requests](#submitting-pull-requests)
 
-1. [Fork](https://help.github.com/articles/fork-a-repo/) the repository and [clone](https://help.github.com/articles/cloning-a-repository/) your fork.
+---
 
-2. Start coding! (it might be helpful to read a [quide on the project structure and conventions](./structure.md) before this)
-   - Configure clangd LSP by generating `compile_commands.json` (e.g. `bear -- make` or `compiledb make`)
-   - Implement your feature.
-   - Check your code works as expected.
-   - Run the code formatter: `clang-format -i $(git ls-files "*.c" "*.h")`.
-   - Run the code linter: `clang-tidy -p . $(git ls-files "*.c" "*.h")`. Some checks are pretty pedantic, feel free to ignore or debate some of the rules.
-   - If you prefer, you can run `make pre-commit` to run several code style checks like the above along a few extra stuff (shellcheck, spellcheck, prettier, etc).
+## Code Guidelines
 
-3. Commit your changes to a new branch (not `master`, one change per branch) and push it:
-   - Commit messages should:
-     - Header line: explain the commit in one line (use the imperative) ("feat" for features, "fix", "style", "chore", "docs", etc)
-     - Be descriptive.
-     - Don't make the title too long and add commit descriptions if you think the changes need it.
-     - e.g. "feat: add support for X", "fix(config): config parser segfaulting", "docs(typo): fix a typo in README.md"
+### Prerequisites
 
-4. Once you are happy with your changes, submit a pull request.
-   - Open the pull request.
-   - Add a short description explaining what you've done (or if it's a work-in-progress - what you need to do)
+Rulmee is written in modern Rust (2024 edition). To build and test locally:
 
-## Issues
+- **Rust Toolchain**: `rustc` and `cargo` (1.85+ recommended).
+- **PAM Development Headers**: `libpam0g-dev` (Debian/Ubuntu) or `pam-devel` (Fedora/RHEL/Arch).
 
-1. Do a quick search on GitHub to check if the issue has already been reported.
-2. [Open an issue](https://github.com//javalsai/lidm/issues/new) and describe the issue you are having - you could include:
-   - Screenshots.
-   - Ways to reproduce the issue.
-   - Your lidm version.
-   - Your platform (e.g. arch linux or Ubuntu 15.04 x64) and init system if you know.
+### Development Workflow
 
-After reporting you should aim to answer questions or clarifications as this helps pinpoint the cause of the issue.
+1. [Fork](https://github.com/BeniaminK/rulmee/fork) the repository and clone your fork:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/rulmee.git
+   cd rulmee
+   ```
 
-## Other
+2. Create a feature or bugfix branch off `main` (or `master`):
+   ```bash
+   git checkout -b feat/my-new-feature
+   ```
 
-If you are unsure what category your contribution falls under, feel free to [open an issue](https://github.com//javalsai/lidm/issues/new) or [a discussion](https://github.com//javalsai/lidm/discussions/new) to talk about it.
+3. Build and test your changes:
+   ```bash
+   cargo build
+   cargo test
+   ```
+
+### Code Quality & Formatting
+
+Before opening a pull request, ensure all linters, formatters, and unit tests pass cleanly:
+
+- **Format Code**:
+  ```bash
+  cargo fmt --all
+  ```
+- **Lint Code**:
+  ```bash
+  cargo clippy --all-targets --all-features -- -D warnings
+  ```
+- **Run Unit Tests**:
+  ```bash
+  cargo test
+  ```
+
+### Commit Messages
+
+Follow standard conventional commit conventions:
+
+- **Header line**: Concise imperative statement summarizing the change (max 72 chars).
+  - Format: `<type>(<scope>): <subject>`
+  - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
+  - Examples:
+    - `feat(ui): add keybinding for session switcher`
+    - `fix(pam): handle auth failure gracefully`
+    - `docs(standards): update logging architecture details`
+
+---
+
+## Issue Tracker
+
+We use **GitHub Issues** to track bug reports, feature requests, and technical debt.
+
+- Search existing issues before submitting:
+  ```bash
+  gh issue list --repo BeniaminK/rulmee
+  ```
+- To view details on a specific issue:
+  ```bash
+  gh issue view <issue-id>
+  ```
+- To submit a new issue via `gh` CLI:
+  ```bash
+  gh issue create --repo BeniaminK/rulmee
+  ```
+
+---
+
+## Submitting Pull Requests
+
+1. Push your branch to your fork:
+   ```bash
+   git push origin feat/my-new-feature
+   ```
+2. Open a Pull Request against `BeniaminK/rulmee`.
+3. Provide a detailed summary of your changes, referencing any associated GitHub Issue IDs (e.g. `Fixes #18`).
