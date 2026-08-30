@@ -28,9 +28,10 @@ jobs:
               - 'src/**'
               - Cargo.toml
               - Cargo.lock
-  build:
-    name: Build
-    needs: check_paths
-    if: github.event_name != 'push' || needs.check_paths.outputs.code_changed == 'true'
-    uses: ./.github/workflows/build.yml
-    permissions: write-all
+# Disabled temporarily until multi-architecture Rust release build workflow is resolved in a separate issue.
+#  build:
+#    name: Build
+#    needs: check_paths
+#    if: github.event_name != 'push' || needs.check_paths.outputs.code_changed == 'true'
+#    uses: ./.github/workflows/build.yml
+#    permissions: write-all
