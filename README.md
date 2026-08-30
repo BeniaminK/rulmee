@@ -4,25 +4,23 @@
 
 # Rulmee (RUst Login ManagEEr)
 
-**Rulmee** is a lightweight, secure, and highly customizable Terminal User Interface (TUI) display manager written in Rust.
+**Rulmee** is a lightweight, secure, and highly customizable Terminal User Interface (TUI) display manager written in Rust. It is a completely rewritten and enhanced version of [LiDM](https://github.com/javalsai/lidm).
 
 Like traditional display managers (such as SDDM or GDM), Rulmee handles user authentication, session discovery, and desktop launching—all within a text-based TUI directly on Linux virtual terminals (TTYs).
 
 ![demo gif](assets/media/lidm.gif)
 
-> _Colors, borders, strings, and keybindings are fully customizable via TOML themes and configuration files._
-
 ---
 
 ## Motivation & Architecture Shift
 
-Rulmee was originally developed in C (formerly known as *LiDM*, "held together by hopes and prayers"). As security, stability, and desktop session complexity grew, the codebase was rewritten from the ground up in Rust as **Rulmee**.
+Rulmee was originally developed in C as [LiDM](https://github.com/javalsai/lidm). As security, stability, and desktop session complexity grew, the codebase was rewritten from the ground up in Rust.
 
 ### Why Rust?
-- **Memory Safety & Privilege Isolation**: Display managers execute as root before dropping privileges to spawn user sessions. Rust eliminates entire classes of memory vulnerabilities (buffer overflows, use-after-free, unsafe string parsing) at compile time.
+- **Memory Safety & Privilege Isolation**: Display managers execute as root before dropping privileges to spawn user sessions. Rust eliminates memory safety issues (buffer overflows, use-after-free, unsafe string parsing) at compile time.
 - **Modern TUI Rendering**: Built on [`ratatui`](https://ratatui.rs) and [`crossterm`](https://crates.io/crates/crossterm), providing clean rendering, double-buffering, and zero terminal screen flicker.
 - **Structured Diagnostics**: Utilizes [`tracing`](https://crates.io/crates/tracing) to separate TUI rendering output (`stdout`) from systemd/journald log records (`stderr`) and live in-app log viewing (<kbd>F4</kbd>).
-- **Type-Safe Configuration**: Migrated from legacy INI files to structured TOML files (`config.toml` & `theme.toml`) with full backward-compatibility deprecation notices.
+- **Type-Safe Configuration**: Migrated from legacy INI files to structured TOML files (`config.toml` & `theme.toml`).
 
 ---
 
@@ -33,7 +31,7 @@ Rulmee was originally developed in C (formerly known as *LiDM*, "held together b
 - **Strict Security Boundaries**: Complies with Linux-PAM specifications and POSIX privilege separation (`setgid` $\rightarrow$ `initgroups` $\rightarrow$ `setuid` $\rightarrow$ `chdir`). Root context never evaluates user shell profiles.
 - **Structured TOML Configuration**: Easily configure keybindings, strings, layout, and colors in `/etc/rulmee/config.toml` and `/etc/rulmee/theme.toml`.
 - **Multi-Destination Logging**: Non-corrupting `stderr` (FD 2) logging for `systemd-journald`, file logging to `/tmp/rulmee.log`, and an in-app log inspector (<kbd>F4</kbd>).
-- **YubiKey / FIDO Support**: Hardware key authentication via `pam_u2f`.
+- **YubiKey / FIDO Support**: Hardware key authentication via `pam_u2f` (see notes in [yubikey.md](./docs/yubikey.md)).
 - **Init System Agnostic**: Ready for `systemd`, `dinit`, `runit`, `openrc`, and `s6`.
 
 ---
@@ -51,7 +49,7 @@ Rulmee was originally developed in C (formerly known as *LiDM*, "held together b
 - [Configuration](#configuration)
 - [PAM Authentication](#pam-authentication)
 - [Logging & Systemd Architecture](#logging--systemd-architecture)
-- [Standards & Specifications](#standards--specifications)
+- [Inspiration & History](#inspiration--history)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -73,7 +71,7 @@ rulmee --set behavior.include_defshell=true
 
 ### Commands
 
-- `rulmee copy-config [DEST]`: Copy the default configuration to your user config directory (`~/.config/rulmee/config.toml`) or a specified destination path.
+- `rulmee copy-config [DEST]`: Copy default configuration to user config (`~/.config/rulmee/config.toml`) or a specified destination path.
 
 ```bash
 # Copy to default user config location (~/.config/rulmee/config.toml)
@@ -85,7 +83,7 @@ rulmee copy-config /etc/rulmee/config.toml
 
 ### TUI Interface Controls
 
-- **Navigation**: Use Up/Down arrow keys or <kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd> to move between fields (username, password, session selector, desktop type).
+- **Navigation**: Use Up/Down arrow keys or <kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd> to move between fields (username, password, session selector).
 - **Option Switcher**: Use Left/Right arrow keys on selector fields to cycle available desktop sessions and users.
 - **Log Viewer**: Press <kbd>F4</kbd> anytime to open the live in-app log overlay.
 - **Login**: Press <kbd>Enter</kbd> to authenticate and launch the selected desktop session.
@@ -133,16 +131,16 @@ Rulmee reads configuration from `/etc/rulmee/config.toml` (or user config at `~/
 Themes are loaded from `/etc/rulmee/theme.toml` or packaged themes in `/usr/share/rulmee/themes/`.
 
 > [!NOTE]
-> **Backward Compatibility**: If `/etc/rulmee/config.toml` is absent, Rulmee temporarily falls back to legacy `/etc/lidm/config.ini` and emits a deprecation warning urging migration to TOML.
+> **Backward Compatibility**: If `/etc/rulmee/config.toml` is absent, Rulmee temporarily falls back to legacy `/etc/lidm/config.ini` and emits a deprecation warning urging migration to TOML. This fallback support will be removed when Rulmee gains more GitHub stars than LiDM (as an indicator of adoption and migration completeness).
 
 ---
 
 # PAM Authentication
 
-Rulmee initializes Linux-PAM authentication using the `login` PAM service (`/etc/pam.d/login`) by default. You can override the target service name by setting the `RULMEE_PAM_SERVICE` (or `LIDM_PAM_SERVICE`) environment variable:
+Rulmee initializes Linux-PAM authentication using the `login` PAM service (`/etc/pam.d/login`) by default. You can override the target service name by setting `RULMEE_AUTH_PAM_SERVICE` (or `LIDM_PAM_SERVICE`):
 
 ```bash
-export RULMEE_PAM_SERVICE="rulmee"
+export RULMEE_AUTH_PAM_SERVICE="rulmee"
 ```
 
 ---
@@ -159,24 +157,24 @@ For complete technical specifications on stdout/stderr isolation and log event s
 
 ---
 
-# Standards & Specifications
+# Inspiration & History
 
-Rulmee adheres strictly to Linux specifications and POSIX standards for desktop discovery, session lifecycle, and security boundaries.
+I originally really liked [LiDM](https://github.com/javalsai/lidm). However, system logs were displayed directly over the user entry point in the console, which disrupted the terminal UI and made it look bad.
 
-Read [STANDARDS.md](./STANDARDS.md) for detailed documentation on:
-- Freedesktop Desktop Entry & XDG Base Directory specifications.
-- 10-step Linux-PAM lifecycle management.
-- `systemd-logind` VT and seat integration (`XDG_SEAT`, `XDG_VTNR`, `XDG_SESSION_TYPE`).
-- POSIX privilege dropping sequence (`setgid` $\rightarrow$ `initgroups` $\rightarrow$ `setuid` $\rightarrow$ `chdir`).
+When I started fixing this logging issue, I realized it would be a great opportunity to rewrite the entire display manager in Rust. During the naming phase, I considered `rlidm` (Rust LiDM) and `rulme`, before settling on the slight modification **Rulmee**.
 
 ---
 
 # Contributing
 
-Contributions are welcome! Please read our [Contribution Guidelines](docs/CONTRIBUTING.md) for details on code formatting (`cargo fmt`), linting (`cargo clippy`), unit tests (`cargo test`), and commit conventions.
+Please read our [Contributing Guidelines](docs/CONTRIBUTING.md).
 
 ---
 
 # License
 
 This project is licensed under the GNU General Public License v3.0 **only**. See [LICENSE](./LICENSE) for details.
+
+---
+
+🌟 If you find Rulmee useful, consider starring this repo! 🔪

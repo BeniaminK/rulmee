@@ -1,6 +1,11 @@
 # YubiKey & FIDO Authentication Guide
 
-This document explains how to set up YubiKey / FIDO hardware authentication with **Rulmee**.
+> [!WARNING]
+> **Status: Experimental / Untested on Physical Hardware**
+> YubiKey and FIDO authentication via `pam_u2f` is implemented according to Linux-PAM specs, but is **currently not well tested** because the author does not possess a physical YubiKey device at this time.
+> Hardware testing and feedback are tracked in [Issue #20](https://github.com/BeniaminK/rulmee/issues/20).
+
+---
 
 ## Enabling YubiKey Authentication
 

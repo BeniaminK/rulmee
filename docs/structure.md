@@ -1,12 +1,12 @@
-# Rulmee Project Structure & Architecture
+# Codebase Structure & Architecture
 
-This document describes the codebase structure, module organization, and development patterns for **Rulmee** (RUst Login ManagEEr).
+This document describes the module organization and code layout for the project.
 
 ---
 
 ## Codebase Organization
 
-Rulmee is organized into clean, single-responsibility Rust modules in `src/`:
+Modules are located in `src/`:
 
 ```
 src/
@@ -42,11 +42,3 @@ Manages the 10-step PAM authentication flow and child privilege dropping (`setgi
 
 ### `session.rs`
 Scans `/usr/share/xsessions` and `/usr/share/wayland-sessions` to build available desktop session descriptors.
-
----
-
-## Development & Code Style
-
-- **Formatting**: Format code using `cargo fmt --all`.
-- **Linting**: Pass Clippy without warnings using `cargo clippy --all-targets --all-features -- -D warnings`.
-- **Testing**: Run unit and integration tests with `cargo test`.

@@ -1,30 +1,31 @@
-# Rulmee Packagers Guide
+# Packagers Guide
 
-This guide details options and conventions for distribution maintainers packaging **Rulmee** (RUst Login ManagEEr).
+This guide details options and conventions for distribution maintainers packaging the application.
 
 ---
 
 ## 1. Package Components
 
-When packaging Rulmee for a Linux distribution, maintainers should include:
+When packaging for a Linux distribution, maintainers should include:
 
-1. **Rulmee Binary**: Compiled via `cargo build --release` (`target/release/rulmee`).
+1. **Application Binary**: Compiled via `cargo build --release` (`target/release/rulmee`).
 2. **Default Configurations**: Default TOML configuration files (`/etc/rulmee/config.toml` & `theme.toml`).
 3. **Man Pages**: Located in `assets/man/` (`rulmee.1`, `rulmee-config.5`).
 4. **Service Descriptors**: Service definitions in `assets/services/` (`systemd`, `dinit`, `runit`, `openrc`, `s6`).
-5. **Stock Themes**: Bundled TOML and legacy themes in `themes/`.
+5. **Stock Themes**: Bundled themes in `themes/`.
 
 ---
 
-## 2. Environment Variables & Fallbacks
+## 2. Environment Variables & System Paths
 
-Rulmee supports environment variables for system path configuration:
+Supports environment variables for system path configuration:
 
 | Environment Variable | Default Value | Description |
 | :--- | :--- | :--- |
 | `RULMEE_CONF` (or `LIDM_CONF`) | `/etc/rulmee/config.toml` | Target configuration file path. |
-| `RULMEE_PAM_SERVICE` (or `LIDM_PAM_SERVICE`) | `login` (or `rulmee`) | Default PAM service name for authentication. |
-| `RULMEE_THEME_DIR` | `/usr/share/rulmee/themes` | Directory containing system themes. |
+| `RULMEE_AUTH_PAM_SERVICE` (or `LIDM_PAM_SERVICE`) | `login` (or `rulmee`) | Default PAM service name for authentication. |
+
+> *Note: The system theme search directory `/usr/share/rulmee/themes` is currently hardcoded. Making `RULMEE_THEME_DIR` configurable is tracked in [Issue #21](https://github.com/BeniaminK/rulmee/issues/21).*
 
 ---
 
