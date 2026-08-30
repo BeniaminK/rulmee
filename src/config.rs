@@ -503,11 +503,11 @@ fn merge_toml_values(dest: &mut toml::Value, source: toml::Value) {
 }
 
 #[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_sync_default_config_toml() {

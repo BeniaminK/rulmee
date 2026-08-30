@@ -55,8 +55,8 @@ pub struct Args {
     #[arg(
         short = 'c',
         long = "config",
-        env = "LIDM_CONF",
-        default_value = "/etc/lidm/default.toml",
+        env = "RULMEE_CONF",
+        default_value = "/etc/rulmee/default.toml",
         help = "Path to configuration file"
     )]
     pub conf_path: String,
@@ -496,6 +496,42 @@ mod tests {
         assert!(help_str.contains("--auth-pam-service"));
         assert!(help_str.contains("--logging-file"));
         assert!(help_str.contains("[default: 100]"));
+    }
+
+    #[test]
+    fn test_cli_args_default_config_path() {
+        let _guard = config::ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::remove_var("RULMEE_CONF");
+        }
+        let args = Args::parse_from(["rulmee"]);
+        assert_eq!(args.conf_path, "/etc/rulmee/default.toml");
+    }
+
+    #[test]
+    fn test_cli_args_rulmee_conf_env() {
+        let _guard = config::ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("RULMEE_CONF", "/custom/rulmee.toml");
+        }
+        let args = Args::parse_from(["rulmee"]);
+        assert_eq!(args.conf_path, "/custom/rulmee.toml");
+        unsafe {
+            std::env::remove_var("RULMEE_CONF");
+        }
+    }
+
+    #[test]
+    fn test_cli_args_flag_precedence_over_env() {
+        let _guard = config::ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("RULMEE_CONF", "/custom/rulmee.toml");
+        }
+        let args = Args::parse_from(["rulmee", "-c", "/cli/config.toml"]);
+        assert_eq!(args.conf_path, "/cli/config.toml");
+        unsafe {
+            std::env::remove_var("RULMEE_CONF");
+        }
     }
 }
 
