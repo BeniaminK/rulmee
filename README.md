@@ -126,9 +126,9 @@ To install default configuration files, man pages, and service descriptors, cons
 
 # Configuration
 
-Rulmee reads configuration from `/etc/rulmee/config.toml` (or user config at `~/.config/rulmee/config.toml`).
+Rulmee reads primary configuration from `/etc/rulmee/default.toml` (or user config at `~/.config/rulmee/default.toml`).
 
-Themes are loaded from `/etc/rulmee/default.toml` or packaged themes in `/usr/share/rulmee/themes/`.
+Themes are discovered from `/etc/rulmee/themes/` and `/usr/share/rulmee/themes/` (with legacy fallback support for `/etc/lidm/themes/` and `/usr/share/lidm/themes/`).
 
 ---
 
