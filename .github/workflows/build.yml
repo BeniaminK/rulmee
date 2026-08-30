@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: "git libpam0g-dev"
+          packages: "git libpam0g-dev cargo rustc"
           version: 1.0
       - uses: actions/checkout@v4
       - id: build
@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: "git libpam0g-dev gcc-multilib"
+          packages: "git libpam0g-dev gcc-multilib cargo rustc"
           version: 1.0
       - uses: actions/checkout@v4
       - run: |
@@ -40,7 +40,7 @@ jobs:
           sudo apt-get install -y libpam0g-dev:i386
 
       - id: build
-        run: ARCH=i386 assets/github_scripts/build.sh CFLAGS="-O3 -Wall -m32"
+        run: ARCH=i386 assets/github_scripts/build.sh
 
       - uses: actions/upload-artifact@v4
         with:
@@ -65,7 +65,7 @@ jobs:
           githubToken: ${{ github.token }}
           install: |
             apt-get update && \
-            apt-get install -y make gcc libpam0g-dev
+            apt-get install -y make gcc libpam0g-dev cargo rustc
           run: ARCH=aarch64 GITHUB_STEP_SUMMARY=gss.out GITHUB_OUTPUT=go.out assets/github_scripts/build.sh
       - if: always()
         run: set +e; cat gss.out >>"$GITHUB_STEP_SUMMARY"; cat go.out >>"$GITHUB_OUTPUT"
@@ -93,7 +93,7 @@ jobs:
           githubToken: ${{ github.token }}
           install: |
             apt-get update && \
-            apt-get install -y make gcc libpam0g-dev
+            apt-get install -y make gcc libpam0g-dev cargo rustc
           run: ARCH=armv7 GITHUB_STEP_SUMMARY=gss.out GITHUB_OUTPUT=go.out assets/github_scripts/build.sh
       - if: always()
         run: set +e; cat gss.out >>"$GITHUB_STEP_SUMMARY"; cat go.out >>"$GITHUB_OUTPUT"
@@ -121,7 +121,7 @@ jobs:
           githubToken: ${{ github.token }}
           install: |
             apt-get update && \
-            apt-get install -y make gcc libpam0g-dev
+            apt-get install -y make gcc libpam0g-dev cargo rustc
           run: ARCH=riscv64 GITHUB_STEP_SUMMARY=gss.out GITHUB_OUTPUT=go.out assets/github_scripts/build.sh
       - if: always()
         run: set +e; cat gss.out >>"$GITHUB_STEP_SUMMARY"; cat go.out >>"$GITHUB_OUTPUT"
@@ -149,7 +149,7 @@ jobs:
             cd /workspace
 
             xbps-install -Syu xbps && xbps-install -yu
-            xbps-install -y git pam-devel make gcc bash git
+            xbps-install -y git pam-devel make gcc bash cargo rust
 
             ARCH=amd64-musl GITHUB_STEP_SUMMARY=gss.out GITHUB_OUTPUT=go.out assets/github_scripts/build.sh
       - if: always()

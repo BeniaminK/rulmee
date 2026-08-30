@@ -840,7 +840,10 @@ pam_service = "gdm"
 
         let (overrides, remaining) = Config::extract_cli_overrides(raw_args);
 
-        assert_eq!(remaining, vec!["rulmee", "-c", "/etc/rulmee/default.toml", "2"]);
+        assert_eq!(
+            remaining,
+            vec!["rulmee", "-c", "/etc/rulmee/default.toml", "2"]
+        );
 
         let behavior = overrides.get("behavior").unwrap().as_table().unwrap();
         assert_eq!(

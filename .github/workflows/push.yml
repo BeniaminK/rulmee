@@ -26,7 +26,8 @@ jobs:
             code:
               - Makefile
               - 'src/**'
-              - 'include/**'
+              - Cargo.toml
+              - Cargo.lock
   build:
     name: Build
     needs: check_paths

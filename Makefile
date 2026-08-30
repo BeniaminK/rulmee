@@ -25,20 +25,12 @@ LDFLAGS ?= -Wl,--gc-sections
 
 LIBS = -lpam
 
-# includes all headers in `$(IDIR)` and compiles everything in `$(CDIR)`
-DEPS = $(wildcard $(IDIR)/*.h $(IDIR)/**/*.h)
-_SOURCES = $(wildcard $(CDIR)/*.c) $(wildcard $(CDIR)/**/*.c)
-OBJ = $(patsubst $(CDIR)/%.c,$(ODIR)/%.o,$(_SOURCES))
-
-$(ODIR)/%.o: $(CDIR)/%.c $(DEPS)
-	@mkdir -p $(dir $@)
-	$(CC) -c -o $@ $< $(ALLFLAGS)
-
-rulmee: $(OBJ)
-	$(CC) -o $@ $^ $(ALLFLAGS) $(LIBS) $(LDFLAGS)
+rulmee:
+	cargo build --release
+	cp target/release/rulmee ./rulmee
 
 clean:
-	rm -rf $(ODIR) rulmee
+	rm -rf $(ODIR) target rulmee
 
 install: rulmee
 	mkdir -p ${DESTDIR}${PREFIX}/bin ${DESTDIR}${PREFIX}/share/man/man{1,5}
@@ -57,10 +49,8 @@ pre-commit:
 	codespell
 	prettier -c "**/*.md"
 	git ls-files "*.sh" "*/PKGBUILD" | xargs shellcheck --shell=bash
-	clang-format -i $$(git ls-files "*.c" "*.h")
-	git ls-files -z "*.c" "*.h" | \
-		parallel -j$$(nproc) -q0 --no-notice --will-cite --tty clang-tidy -warnings-as-errors=\* --quiet |& \
-		grep -v "warnings generated." || true
+	cargo fmt --check
+	cargo clippy -- -D warnings
 
 print-version:
 	@echo $(VERSION)
