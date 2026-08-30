@@ -4,7 +4,7 @@ set -e
 MYSELF=$(realpath "$0")
 MYDIR=$(dirname "$MYSELF")
 
-RULMEE_PATH=${RULMEE_PATH:-${LIDM_PATH:-$(command which rulmee || command which lidm)}}
+RULMEE_PATH=${RULMEE_PATH:-$(command which rulmee)}
 echo "Using '$RULMEE_PATH'"
 [[ -e "$RULMEE_PATH" ]] || { echo "'$RULMEE_PATH' is not executable" >&2; exit 1; }
 

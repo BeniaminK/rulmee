@@ -9,8 +9,7 @@ COLS=60
 ROWS=35
 
 if [[ -z "$IM_FLOATING" ]]; then
-    RULMEE_SESSIONS_N=${RULMEE_SESSIONS_N:-$LIDM_SESSIONS_N}
-    if [[ -z "$RULMEE_SESSIONS_N" ]]; then
+    if [[ -z "${RULMEE_SESSIONS_N:-}" ]]; then
         echo "Please set RULMEE_SESSIONS_N" >&2;
         exit 1;
     fi
@@ -21,7 +20,7 @@ if [[ -z "$IM_FLOATING" ]]; then
         "kitty --override font_size=12.0 --override background_opacity=1 --override cursor_trail=0 --override cursor_shape=beam --override cursor_blink_interval=0 bash -c 'cd \"$PWD\" && IM_FLOATING=1 RULMEE_PATH=\"$RULMEE_PATH\" RULMEE_SCR_TTY=\"$(tty)\" RULMEE_SESSIONS_N=\"$RULMEE_SESSIONS_N\" bash -i \"$MYSELF\"'"
 fi
 
-RULMEE_PATH=${RULMEE_PATH:-${LIDM_PATH:-$(command which rulmee || command which lidm)}}
+RULMEE_PATH=${RULMEE_PATH:-$(command which rulmee)}
 echo "Using '$RULMEE_PATH'"
 [[ -e "$RULMEE_PATH" ]] || {
     echo "'$RULMEE_PATH' is not executable" >&2;
@@ -34,7 +33,7 @@ echo "Press enter when the window is clearly visible and nothing in the way"
 echo "ONLY use this script if you are on hyprland and a \"normal\" kitty config"
 echo "AND make sure you have rg, jq, grim, gifski and maybe a few more"
 
-RULMEE_SCR_TTY=${RULMEE_SCR_TTY:-${LIDM_SCR_TTY:-/dev/tty}}
+RULMEE_SCR_TTY=${RULMEE_SCR_TTY:-/dev/tty}
 exec 2>"$RULMEE_SCR_TTY"
 echo "This should show on the original terminal" > "$RULMEE_SCR_TTY"
 echo "And this too" >&2

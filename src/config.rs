@@ -175,7 +175,7 @@ impl Config {
         }
     }
 
-    /// Scan environment variables matching `RULMEE_<SECTION>_<KEY>` (or legacy `LIDM_<SECTION>_<KEY>`) and apply them
+    /// Scan environment variables matching `RULMEE_<SECTION>_<KEY>` and apply them
     /// as overrides onto the current configuration. The naming convention is
     /// automatic: `RULMEE_STRINGS_F_POWEROFF=dsds` maps to `[strings] f_poweroff`.
     ///
@@ -189,7 +189,7 @@ impl Config {
                 continue;
             }
 
-            let rest = match key.strip_prefix("RULMEE_").or_else(|| key.strip_prefix("LIDM_")) {
+            let rest = match key.strip_prefix("RULMEE_") {
                 Some(r) => r,
                 None => continue,
             };
@@ -491,7 +491,7 @@ impl Config {
         }
 
         let default_toml = Self::generate_default_toml();
-        let header = "# Default Configuration for Rulmee (Lightweight Display Manager)\n# All settings shown below with their default values.\n\n";
+        let header = "# Default Configuration for Rulmee (RUst Login ManagEEr)\n# All settings shown below with their default values.\n\n";
         let full_content = format!("{}{}", header, default_toml);
 
         std::fs::write(&path, full_content)?;
@@ -526,7 +526,7 @@ mod tests {
     fn test_sync_default_config_toml() {
         let default_toml = Config::generate_default_toml();
         let target_path = Path::new("themes/default.toml");
-        let header = "# Default Configuration for Rulmee (Lightweight Display Manager)\n# All settings shown below with their default values.\n\n";
+        let header = "# Default Configuration for Rulmee (RUst Login ManagEEr)\n# All settings shown below with their default values.\n\n";
         let full_content = format!("{}{}", header, default_toml);
 
         let needs_write = if target_path.exists() {
@@ -632,26 +632,6 @@ f_fido = "yubikey"
             std::env::remove_var("RULMEE_LOGGING_STDOUT");
             std::env::remove_var("RULMEE_AUTH_PAM_SERVICE");
             std::env::remove_var("RULMEE_BEHAVIOR_REFRESH_RATE");
-        }
-    }
-
-    #[test]
-    fn test_config_legacy_env_overrides_fallback() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe {
-            std::env::set_var("LIDM_LOGGING_LEVEL", "warn");
-            std::env::set_var("LIDM_BEHAVIOR_REFRESH_RATE", "250");
-        }
-
-        let mut config = Config::default();
-        config.apply_env_overrides();
-
-        assert_eq!(config.logging.level, "warn");
-        assert_eq!(config.behavior.refresh_rate, 250);
-
-        unsafe {
-            std::env::remove_var("LIDM_LOGGING_LEVEL");
-            std::env::remove_var("LIDM_BEHAVIOR_REFRESH_RATE");
         }
     }
 
@@ -937,7 +917,7 @@ pam_service = "gdm"
     #[test]
     fn test_load_with_overrides_fallback_path() {
         let temp_dir = std::env::temp_dir();
-        let legacy_dir = temp_dir.join("lidm_test_fallback");
+        let legacy_dir = temp_dir.join("rulmee_test_fallback");
         let _ = std::fs::create_dir_all(&legacy_dir);
         let legacy_conf = legacy_dir.join("default.toml");
         std::fs::write(&legacy_conf, "[behavior]\nshow_console = true\n").unwrap();
@@ -957,7 +937,7 @@ pam_service = "gdm"
     #[test]
     fn test_resolve_config_path_when_primary_exists() {
         let temp_dir = std::env::temp_dir();
-        let primary = temp_dir.join("lidm_test_primary_exists.toml");
+        let primary = temp_dir.join("rulmee_test_primary_exists.toml");
         std::fs::write(&primary, "[behavior]\nrefresh_rate = 50\n").unwrap();
 
         let (resolved, warning) = Config::resolve_config_path(primary.to_str().unwrap());
@@ -970,7 +950,7 @@ pam_service = "gdm"
     #[test]
     fn test_resolve_config_path_custom_fallback() {
         let temp_dir = std::env::temp_dir();
-        let fallback = temp_dir.join("lidm_test_custom_fallback.toml");
+        let fallback = temp_dir.join("rulmee_test_custom_fallback.toml");
         std::fs::write(&fallback, "[behavior]\nrefresh_rate = 75\n").unwrap();
 
         let primary = "/nonexistent/custom/primary.toml";
@@ -992,7 +972,7 @@ pam_service = "gdm"
         let (resolved, warning) = Config::resolve_config_path_with_custom_fallback(
             primary,
             primary,
-            "/nonexistent/path/lidm_custom_missing.toml",
+            "/nonexistent/path/rulmee_custom_missing_fallback.toml",
         );
         assert_eq!(resolved, primary);
         assert!(warning.is_none());

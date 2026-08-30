@@ -10,11 +10,11 @@ ERR=0
 # shellcheck disable=SC2034
 make -j"$(nproc)" "$@" 2> /tmp/stderr || ERR=$?
 
-BSIZE=$(stat --printf="%s" rulmee || stat --printf="%s" target/release/rulmee)
+BSIZE=$(stat --printf="%s" rulmee)
 HSIZE=$(numfmt --to=iec-i<<<"$BSIZE")B
 WARNS=$(
   sed -nE \
-      's/^([^ ]+\.[ch]):([0-9]+):([0-9]+): ([a-z]+): (.*)$/::\4 file=\1,line=\2,col=\3::\5/p' \
+      's/^([^ ]+\.rs):([0-9]+):([0-9]+): ([a-z]+): (.*)$/::\4 file=\1,line=\2,col=\3::\5/p' \
       /tmp/stderr
 )
 WARNS_NUM=$({ [[ "$WARNS" == "" ]] && echo 0; } || wc -l <<<"$WARNS")
@@ -43,10 +43,6 @@ echo "$WARNS"
 
 if [ "$ERR" -ne 0 ]; then exit "$ERR"; fi
 
-if [ -f rulmee ]; then
-    mv rulmee rulmee-"$ARCH"
-else
-    mv target/release/rulmee rulmee-"$ARCH"
-fi
+mv rulmee rulmee-"$ARCH"
 
 echo "DESCR='$HSIZE, $WARNS_NUM warnings'" >> "$GITHUB_OUTPUT"

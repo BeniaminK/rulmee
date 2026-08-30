@@ -44,7 +44,7 @@ pub enum Commands {
         env!("VERGEN_RUSTC_SEMVER"),
         ")"
     ),
-    about = "Rulmee: Lightweight Display Manager",
+    about = "Rulmee: RUst Login ManagEEr",
     after_help = config::Config::generate_cli_help()
 )]
 pub struct Args {

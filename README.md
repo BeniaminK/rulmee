@@ -4,7 +4,7 @@
 
 # Rulmee (RUst Login ManagEEr)
 
-**Rulmee** is a lightweight, secure, and highly customizable Terminal User Interface (TUI) display manager written in Rust. It is a completely rewritten and enhanced version of [LiDM](https://github.com/javalsai/lidm).
+**Rulmee** (RUst Login ManagEEr) is a secure and highly customizable Terminal User Interface (TUI) display manager written in Rust. It is a completely rewritten and enhanced version of [LiDM](https://github.com/javalsai/lidm).
 
 Like traditional display managers (such as SDDM or GDM), Rulmee handles user authentication, session discovery, and desktop launching—all within a text-based TUI directly on Linux virtual terminals (TTYs).
 
@@ -137,7 +137,7 @@ Themes are loaded from `/etc/rulmee/theme.toml` or packaged themes in `/usr/shar
 
 # PAM Authentication
 
-Rulmee initializes Linux-PAM authentication using the `login` PAM service (`/etc/pam.d/login`) by default. You can override the target service name by setting `RULMEE_AUTH_PAM_SERVICE` (or `LIDM_PAM_SERVICE`):
+Rulmee initializes Linux-PAM authentication using the `login` PAM service (`/etc/pam.d/login`) by default. You can override the target service name by setting `RULMEE_AUTH_PAM_SERVICE`:
 
 ```bash
 export RULMEE_AUTH_PAM_SERVICE="rulmee"
