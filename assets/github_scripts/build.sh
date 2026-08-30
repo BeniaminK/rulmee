@@ -10,7 +10,7 @@ ERR=0
 # shellcheck disable=SC2034
 make -j"$(nproc)" "$@" 2> /tmp/stderr || ERR=$?
 
-BSIZE=$(stat --printf="%s" lidm)
+BSIZE=$(stat --printf="%s" rulmee || stat --printf="%s" target/release/rulmee)
 HSIZE=$(numfmt --to=iec-i<<<"$BSIZE")B
 WARNS=$(
   sed -nE \
@@ -43,6 +43,10 @@ echo "$WARNS"
 
 if [ "$ERR" -ne 0 ]; then exit "$ERR"; fi
 
-mv lidm lidm-"$ARCH"
+if [ -f rulmee ]; then
+    mv rulmee rulmee-"$ARCH"
+else
+    mv target/release/rulmee rulmee-"$ARCH"
+fi
 
 echo "DESCR='$HSIZE, $WARNS_NUM warnings'" >> "$GITHUB_OUTPUT"

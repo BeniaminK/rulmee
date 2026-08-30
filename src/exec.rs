@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn test_parse_env_file() {
         let temp_dir = std::env::temp_dir();
-        let file_path = temp_dir.join("lidm_test_env_parse");
+        let file_path = temp_dir.join("rulmee_test_env_parse");
         let content = r#"
 # Comment line
 FOO=bar
@@ -386,8 +386,8 @@ INVALID_LINE_NO_EQUALS
     #[test]
     fn test_source_environment_files_order_and_precedence() {
         let temp_dir = std::env::temp_dir();
-        let sys_file = temp_dir.join("lidm_test_sys_profile");
-        let user_dir = temp_dir.join("lidm_test_user_home");
+        let sys_file = temp_dir.join("rulmee_test_sys_profile");
+        let user_dir = temp_dir.join("rulmee_test_user_home");
         let _ = std::fs::create_dir_all(&user_dir);
         let user_file = user_dir.join(".xprofile");
 

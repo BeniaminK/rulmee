@@ -110,7 +110,7 @@ pub struct LoggingConfig {
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
-            file: "/tmp/lidm.log".to_string(),
+            file: "/tmp/rulmee.log".to_string(),
             level: "debug".to_string(),
             stdout: false,
         }
@@ -175,9 +175,9 @@ impl Config {
         }
     }
 
-    /// Scan environment variables matching `LIDM_<SECTION>_<KEY>` and apply them
+    /// Scan environment variables matching `RULMEE_<SECTION>_<KEY>` (or legacy `LIDM_<SECTION>_<KEY>`) and apply them
     /// as overrides onto the current configuration. The naming convention is
-    /// automatic: `LIDM_STRINGS_F_POWEROFF=dsds` maps to `[strings] f_poweroff`.
+    /// automatic: `RULMEE_STRINGS_F_POWEROFF=dsds` maps to `[strings] f_poweroff`.
     ///
     /// Values are auto-typed: `true`/`false` → bool, valid integers → integer,
     /// everything else → string.
@@ -189,7 +189,7 @@ impl Config {
                 continue;
             }
 
-            let rest = match key.strip_prefix("LIDM_") {
+            let rest = match key.strip_prefix("RULMEE_").or_else(|| key.strip_prefix("LIDM_")) {
                 Some(r) => r,
                 None => continue,
             };
@@ -321,7 +321,7 @@ impl Config {
             let default_val = toml::Value::try_from(Config::default())
                 .unwrap_or(toml::Value::Table(toml::Table::new()));
             let mut out = String::from(
-                "Configuration Overrides:\n  Any setting can be overridden via --<section>-<key> <value> or LIDM_<SECTION>_<KEY>=<value>.\n\n",
+                "Configuration Overrides:\n  Any setting can be overridden via --<section>-<key> <value> or RULMEE_<SECTION>_<KEY>=<value>.\n\n",
             );
 
             let section_order = ["behavior", "auth", "logging", "functions", "strings", "colors"];
@@ -466,7 +466,7 @@ impl Config {
             && !xdg.trim().is_empty()
         {
             return std::path::PathBuf::from(xdg)
-                .join("lidm")
+                .join("rulmee")
                 .join("default.toml");
         }
 
@@ -475,11 +475,11 @@ impl Config {
         {
             return std::path::PathBuf::from(home)
                 .join(".config")
-                .join("lidm")
+                .join("rulmee")
                 .join("default.toml");
         }
 
-        std::path::PathBuf::from("/etc/lidm/default.toml")
+        std::path::PathBuf::from("/etc/rulmee/default.toml")
     }
 
     pub fn execute_copy_config(
@@ -491,7 +491,7 @@ impl Config {
         }
 
         let default_toml = Self::generate_default_toml();
-        let header = "# Default Configuration for LiDM (Lightweight Display Manager)\n# All settings shown below with their default values.\n\n";
+        let header = "# Default Configuration for Rulmee (Lightweight Display Manager)\n# All settings shown below with their default values.\n\n";
         let full_content = format!("{}{}", header, default_toml);
 
         std::fs::write(&path, full_content)?;
@@ -526,7 +526,7 @@ mod tests {
     fn test_sync_default_config_toml() {
         let default_toml = Config::generate_default_toml();
         let target_path = Path::new("themes/default.toml");
-        let header = "# Default Configuration for LiDM (Lightweight Display Manager)\n# All settings shown below with their default values.\n\n";
+        let header = "# Default Configuration for Rulmee (Lightweight Display Manager)\n# All settings shown below with their default values.\n\n";
         let full_content = format!("{}{}", header, default_toml);
 
         let needs_write = if target_path.exists() {
@@ -603,7 +603,7 @@ f_fido = "yubikey"
     #[test]
     fn test_logging_and_auth_config_defaults() {
         let config = Config::default();
-        assert_eq!(config.logging.file, "/tmp/lidm.log");
+        assert_eq!(config.logging.file, "/tmp/rulmee.log");
         assert_eq!(config.logging.level, "debug");
         assert!(!config.logging.stdout);
         assert_eq!(config.auth.pam_service, "login");
@@ -613,10 +613,10 @@ f_fido = "yubikey"
     fn test_config_automatic_env_overrides() {
         let _guard = ENV_LOCK.lock().unwrap();
         unsafe {
-            std::env::set_var("LIDM_LOGGING_LEVEL", "warn");
-            std::env::set_var("LIDM_LOGGING_STDOUT", "true");
-            std::env::set_var("LIDM_AUTH_PAM_SERVICE", "custom-pam");
-            std::env::set_var("LIDM_BEHAVIOR_REFRESH_RATE", "250");
+            std::env::set_var("RULMEE_LOGGING_LEVEL", "warn");
+            std::env::set_var("RULMEE_LOGGING_STDOUT", "true");
+            std::env::set_var("RULMEE_AUTH_PAM_SERVICE", "custom-pam");
+            std::env::set_var("RULMEE_BEHAVIOR_REFRESH_RATE", "250");
         }
 
         let mut config = Config::default();
@@ -628,9 +628,29 @@ f_fido = "yubikey"
         assert_eq!(config.behavior.refresh_rate, 250);
 
         unsafe {
+            std::env::remove_var("RULMEE_LOGGING_LEVEL");
+            std::env::remove_var("RULMEE_LOGGING_STDOUT");
+            std::env::remove_var("RULMEE_AUTH_PAM_SERVICE");
+            std::env::remove_var("RULMEE_BEHAVIOR_REFRESH_RATE");
+        }
+    }
+
+    #[test]
+    fn test_config_legacy_env_overrides_fallback() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("LIDM_LOGGING_LEVEL", "warn");
+            std::env::set_var("LIDM_BEHAVIOR_REFRESH_RATE", "250");
+        }
+
+        let mut config = Config::default();
+        config.apply_env_overrides();
+
+        assert_eq!(config.logging.level, "warn");
+        assert_eq!(config.behavior.refresh_rate, 250);
+
+        unsafe {
             std::env::remove_var("LIDM_LOGGING_LEVEL");
-            std::env::remove_var("LIDM_LOGGING_STDOUT");
-            std::env::remove_var("LIDM_AUTH_PAM_SERVICE");
             std::env::remove_var("LIDM_BEHAVIOR_REFRESH_RATE");
         }
     }
@@ -639,7 +659,7 @@ f_fido = "yubikey"
     fn test_config_load_precedence() {
         let _guard = ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir();
-        let config_path = temp_dir.join("test_lidm_precedence.toml");
+        let config_path = temp_dir.join("test_rulmee_precedence.toml");
         let toml_content = r#"
 [logging]
 level = "info"
@@ -654,12 +674,12 @@ refresh_rate = 150
         std::fs::write(&config_path, toml_content).unwrap();
 
         unsafe {
-            std::env::set_var("LIDM_LOGGING_LEVEL", "warn");
-            std::env::set_var("LIDM_BEHAVIOR_REFRESH_RATE", "300");
+            std::env::set_var("RULMEE_LOGGING_LEVEL", "warn");
+            std::env::set_var("RULMEE_BEHAVIOR_REFRESH_RATE", "300");
         }
 
         let raw_args = vec![
-            "lidm",
+            "rulmee",
             "-c",
             config_path.to_str().unwrap(),
             "--logging-file",
@@ -696,8 +716,8 @@ refresh_rate = 150
         assert_eq!(config.auth.pam_service, "toml-pam");
 
         unsafe {
-            std::env::remove_var("LIDM_LOGGING_LEVEL");
-            std::env::remove_var("LIDM_BEHAVIOR_REFRESH_RATE");
+            std::env::remove_var("RULMEE_LOGGING_LEVEL");
+            std::env::remove_var("RULMEE_BEHAVIOR_REFRESH_RATE");
         }
         let _ = std::fs::remove_file(config_path);
     }
@@ -705,7 +725,7 @@ refresh_rate = 150
     #[test]
     fn test_config_load_broken_toml_fallback_to_default() {
         let temp_dir = std::env::temp_dir();
-        let config_path = temp_dir.join("test_lidm_broken.toml");
+        let config_path = temp_dir.join("test_rulmee_broken.toml");
         std::fs::write(&config_path, "invalid toml [[ [ {{ content").unwrap();
 
         let args = crate::Args {
@@ -716,7 +736,7 @@ refresh_rate = 150
 
         let (config, err) = Config::load(&args, None);
         assert!(err.is_some());
-        assert_eq!(config.logging.file, "/tmp/lidm.log");
+        assert_eq!(config.logging.file, "/tmp/rulmee.log");
 
         let _ = std::fs::remove_file(config_path);
     }
@@ -725,7 +745,7 @@ refresh_rate = 150
     fn test_config_arbitrary_env_override_strings() {
         let _guard = ENV_LOCK.lock().unwrap();
         unsafe {
-            std::env::set_var("LIDM_STRINGS_F_POWEROFF", "dsds");
+            std::env::set_var("RULMEE_STRINGS_F_POWEROFF", "dsds");
         }
 
         let mut config = Config::default();
@@ -734,7 +754,7 @@ refresh_rate = 150
         assert_eq!(config.strings.f_poweroff, "dsds");
 
         unsafe {
-            std::env::remove_var("LIDM_STRINGS_F_POWEROFF");
+            std::env::remove_var("RULMEE_STRINGS_F_POWEROFF");
         }
     }
 
@@ -785,7 +805,7 @@ box_type = "block""#,
 
     #[test]
     fn test_resolve_default_copy_path_custom() {
-        let custom = "/tmp/custom_lidm_config.toml";
+        let custom = "/tmp/custom_rulmee_config.toml";
         let path = Config::resolve_default_copy_path(Some(custom));
         assert_eq!(path, std::path::PathBuf::from(custom));
     }
@@ -793,7 +813,7 @@ box_type = "block""#,
     #[test]
     fn test_execute_copy_config_creates_file() {
         let temp_dir = std::env::temp_dir();
-        let target = temp_dir.join("lidm_test_copy_config/sub/default.toml");
+        let target = temp_dir.join("rulmee_test_copy_config/sub/default.toml");
         if target.exists() {
             let _ = std::fs::remove_file(&target);
         }
@@ -803,10 +823,10 @@ box_type = "block""#,
 
         assert!(target.exists());
         let content = std::fs::read_to_string(&target).unwrap();
-        assert!(content.contains("# Default Configuration for LiDM"));
+        assert!(content.contains("# Default Configuration for Rulmee"));
         assert!(content.contains("[logging]"));
 
-        let _ = std::fs::remove_dir_all(temp_dir.join("lidm_test_copy_config"));
+        let _ = std::fs::remove_dir_all(temp_dir.join("rulmee_test_copy_config"));
     }
 
     #[test]
@@ -828,9 +848,9 @@ pam_service = "gdm"
     #[test]
     fn test_extract_cli_overrides_basic() {
         let raw_args = vec![
-            "lidm".to_string(),
+            "rulmee".to_string(),
             "-c".to_string(),
-            "/etc/lidm/default.toml".to_string(),
+            "/etc/rulmee/default.toml".to_string(),
             "--behavior-box-type".to_string(),
             "rounded".to_string(),
             "--behavior_refresh_rate=250".to_string(),
@@ -842,7 +862,7 @@ pam_service = "gdm"
 
         let (overrides, remaining) = Config::extract_cli_overrides(raw_args);
 
-        assert_eq!(remaining, vec!["lidm", "-c", "/etc/lidm/default.toml", "2"]);
+        assert_eq!(remaining, vec!["rulmee", "-c", "/etc/rulmee/default.toml", "2"]);
 
         let behavior = overrides.get("behavior").unwrap().as_table().unwrap();
         assert_eq!(
@@ -865,7 +885,7 @@ pam_service = "gdm"
     #[test]
     fn test_extract_cli_overrides_arrays_and_booleans() {
         let raw_args = vec![
-            "lidm".to_string(),
+            "rulmee".to_string(),
             "--behavior-source=/etc/profile,/etc/environment".to_string(),
             "--behavior-include-defshell".to_string(),
             "false".to_string(),
@@ -874,7 +894,7 @@ pam_service = "gdm"
         ];
 
         let (overrides, remaining) = Config::extract_cli_overrides(raw_args);
-        assert_eq!(remaining, vec!["lidm"]);
+        assert_eq!(remaining, vec!["rulmee"]);
 
         let behavior = overrides.get("behavior").unwrap().as_table().unwrap();
         let sources = behavior.get("source").unwrap().as_array().unwrap();

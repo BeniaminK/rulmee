@@ -5,7 +5,7 @@ port=tty7
 respawn_period="${respawn_period:-60}"
 term_type="${term_type:-linux}"
 command=/sbin/agetty
-command_args_foreground="${agetty_options} ${port} ${baud} ${term_type} -nl /bin/lidm -o 7"
+command_args_foreground="${agetty_options} ${port} ${baud} ${term_type} -nl /bin/rulmee -o 7"
 pidfile="/run/${RC_SVCNAME}.pid"
 
 depend() {

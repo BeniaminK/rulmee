@@ -20,7 +20,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: build-amd64
-          path: lidm-amd64
+          path: rulmee-amd64
           retention-days: 1
 
   build-linux-i386:
@@ -45,7 +45,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: build-i386
-          path: lidm-i386
+          path: rulmee-i386
           retention-days: 1
 
   build-linux-aarch64:
@@ -73,7 +73,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: build-aarch64
-          path: lidm-aarch64
+          path: rulmee-aarch64
           retention-days: 1
 
   build-linux-armv7:
@@ -101,7 +101,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: build-armv7
-          path: lidm-armv7
+          path: rulmee-armv7
           retention-days: 1
 
   build-linux-riscv64:
@@ -129,7 +129,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: build-riscv64
-          path: lidm-riscv64
+          path: rulmee-riscv64
           retention-days: 1
 
   # This build job is only symbolic, the behavior of the packaged Void Linux version may differ.
@@ -158,5 +158,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: build-amd64-musl
-          path: lidm-amd64-musl
+          path: rulmee-amd64-musl
           retention-days: 1

@@ -2,4 +2,4 @@ BAUD_RATE=38400
 TERM_NAME=linux
 
 TTY=tty7
-EXEC_PATH=/bin/lidm
+EXEC_PATH=/bin/rulmee

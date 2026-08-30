@@ -22,8 +22,8 @@ Supports environment variables for system path configuration:
 
 | Environment Variable | Default Value | Description |
 | :--- | :--- | :--- |
-| `RULMEE_CONF` (or `LIDM_CONF`) | `/etc/rulmee/config.toml` | Target configuration file path. |
-| `RULMEE_AUTH_PAM_SERVICE` (or `LIDM_PAM_SERVICE`) | `login` (or `rulmee`) | Default PAM service name for authentication. |
+| `RULMEE_CONF` | `/etc/rulmee/config.toml` | Target configuration file path. |
+| `RULMEE_AUTH_PAM_SERVICE` | `login` (or `rulmee`) | Default PAM service name for authentication. |
 
 > *Note: The system theme search directory `/usr/share/rulmee/themes` is currently hardcoded. Making `RULMEE_THEME_DIR` configurable is tracked in [Issue #21](https://github.com/BeniaminK/rulmee/issues/21).*
 

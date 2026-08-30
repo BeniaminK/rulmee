@@ -27,6 +27,8 @@ pub fn discover_themes(base_colors: &Colors) -> Vec<Theme> {
     let mut themes = vec![Theme::new("default", "default", base_colors.clone())];
 
     let search_paths = [
+        Path::new("/etc/rulmee/themes"),
+        Path::new("/usr/share/rulmee/themes"),
         Path::new("/etc/lidm/themes"),
         Path::new("/usr/share/lidm/themes"),
         Path::new("./themes"),
@@ -113,7 +115,7 @@ mod tests {
     #[test]
     fn test_discover_themes_loads_ini_and_toml() {
         let temp_dir = std::env::temp_dir();
-        let themes_dir = temp_dir.join("lidm_test_discover_themes");
+        let themes_dir = temp_dir.join("rulmee_test_discover_themes");
         let _ = std::fs::create_dir_all(&themes_dir);
 
         let toml_file = themes_dir.join("theme_a.toml");

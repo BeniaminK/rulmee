@@ -1,5 +1,5 @@
 VERSION := 2.0.2
-.DEFAULT_GOAL := lidm
+.DEFAULT_GOAL := rulmee
 
 CDIR = src
 LDIR = lib
@@ -17,9 +17,9 @@ CFLAGS ?= -O3 -Wall -Wextra -fdata-sections -ffunction-sections
 # C PreProcessor flags, not C Plus Plus
 CPPFLAGS ?=
 _DFLAGS?= \
-	-DLIDM_VERSION=\"$(VERSION)\" \
-	-DLIDM_GIT_REV=\"$(INFO_GIT_REV)\" \
-	-DLIDM_BUILD_TS=$(INFO_BUILD_TS)
+	-DRULMEE_VERSION=\"$(VERSION)\" \
+	-DRULMEE_GIT_REV=\"$(INFO_GIT_REV)\" \
+	-DRULMEE_BUILD_TS=$(INFO_BUILD_TS)
 ALLFLAGS = $(_DFLAGS) $(CFLAGS) $(CPPFLAGS) -I$(IDIR)
 LDFLAGS ?= -Wl,--gc-sections
 
@@ -34,22 +34,22 @@ $(ODIR)/%.o: $(CDIR)/%.c $(DEPS)
 	@mkdir -p $(dir $@)
 	$(CC) -c -o $@ $< $(ALLFLAGS)
 
-lidm: $(OBJ)
+rulmee: $(OBJ)
 	$(CC) -o $@ $^ $(ALLFLAGS) $(LIBS) $(LDFLAGS)
 
 clean:
-	rm -rf $(ODIR) lidm
+	rm -rf $(ODIR) rulmee
 
-install: lidm
+install: rulmee
 	mkdir -p ${DESTDIR}${PREFIX}/bin ${DESTDIR}${PREFIX}/share/man/man{1,5}
-	install -Dm755 ./lidm ${DESTDIR}${PREFIX}/bin/
-	[ -f ${DESTDIR}/etc/lidm.ini ] || install -Dm644 ./themes/default.ini ${DESTDIR}/etc/lidm.ini
-	install -Dm644 ./assets/man/lidm.1 ${DESTDIR}${PREFIX}/share/man/man1/
-	install -Dm644 ./assets/man/lidm-config.5 ${DESTDIR}${PREFIX}/share/man/man5/
+	install -Dm755 ./rulmee ${DESTDIR}${PREFIX}/bin/
+	[ -f ${DESTDIR}/etc/rulmee/default.toml ] || install -Dm644 ./themes/default.toml ${DESTDIR}/etc/rulmee/default.toml
+	install -Dm644 ./assets/man/rulmee.1 ${DESTDIR}${PREFIX}/share/man/man1/
+	install -Dm644 ./assets/man/rulmee-config.5 ${DESTDIR}${PREFIX}/share/man/man5/
 
 uninstall: uninstall-service
-	rm -rf ${DESTDIR}${PREFIX}/bin/lidm ${DESTDIR}/etc/lidm.ini
-	rm -rf ${DESTDIR}${PREFIX}/share/man/man{1/lidm.1,5/lidm-config.5}.gz
+	rm -rf ${DESTDIR}${PREFIX}/bin/rulmee ${DESTDIR}/etc/rulmee/default.toml
+	rm -rf ${DESTDIR}${PREFIX}/share/man/man{1/rulmee.1,5/rulmee-config.5}.gz
 
 include services.mk
 

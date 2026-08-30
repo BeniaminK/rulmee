@@ -61,7 +61,7 @@ jobs:
         with:
           tag: v${{ needs.release-checks.outputs.VERSION }}
           commit: ${{ github.sha }}
-          artifacts: builds/lidm-*
+          artifacts: builds/rulmee-*
           artifactErrorsFailBuild: true
           body: Release notes not generated yet.
 

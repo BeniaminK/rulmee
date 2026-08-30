@@ -26,7 +26,7 @@ pub enum Commands {
     #[command(about = "Copy default configuration to local or specified config file")]
     CopyConfig {
         #[arg(
-            help = "Destination path for the configuration file [default: ~/.config/lidm/default.toml]"
+            help = "Destination path for the configuration file [default: ~/.config/rulmee/default.toml]"
         )]
         dest: Option<String>,
     },
@@ -44,7 +44,7 @@ pub enum Commands {
         env!("VERGEN_RUSTC_SEMVER"),
         ")"
     ),
-    about = "LiDM: Lightweight Display Manager",
+    about = "Rulmee: Lightweight Display Manager",
     after_help = config::Config::generate_cli_help()
 )]
 pub struct Args {
@@ -473,7 +473,7 @@ mod tests {
     #[test]
     fn test_full_cli_args_parsing_and_config_apply() {
         let input_args = vec![
-            "lidm",
+            "rulmee",
             "--behavior-box-type",
             "block",
             "--behavior-refresh-rate",

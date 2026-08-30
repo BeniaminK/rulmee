@@ -1,5 +1,5 @@
 {
-  description = "A ✨fully✨ colorful customizable TUI display manager made in C for simplicity.";
+  description = "A ✨fully✨ colorful customizable TUI display manager written in Rust.";
 
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
@@ -17,10 +17,10 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        name = "lidm";
+        name = "rulmee";
         version = builtins.elemAt (builtins.match "VERSION[[:blank:]]*=[[:space:]]*([^\n]*)\n.*" (builtins.readFile ./Makefile)) 0;
 
-        lidm = pkgs.callPackage assets/pkg/nix/lidm.nix {
+        rulmee = pkgs.callPackage assets/pkg/nix/rulmee.nix {
           inherit pkgs;
           lib = pkgs.lib;
           config = {
@@ -35,12 +35,12 @@
       in
       rec {
         defaultApp = flake-utils.lib.mkApp { drv = defaultPackage; };
-        defaultPackage = lidm;
-        devShell = pkgs.mkShell { buildInputs = lidm.nativeBuildInputs ++ [ pkgs.clang-tools ]; };
+        defaultPackage = rulmee;
+        devShell = pkgs.mkShell { buildInputs = rulmee.nativeBuildInputs ++ [ pkgs.clang-tools ]; };
         formatter = nixpkgs.legacyPackages.${system}.nixfmt-tree;
       }
     )
     // {
-      nixosModules.lidm = assets/pkg/nix/module.nix;
+      nixosModules.rulmee = assets/pkg/nix/module.nix;
     };
 }

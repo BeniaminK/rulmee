@@ -1,5 +1,5 @@
 type            = process
-command         = /sbin/agetty tty7 linux-c -n -l /bin/lidm -o 7
+command         = /sbin/agetty tty7 linux-c -n -l /bin/rulmee -o 7
 restart         = true
 depends-on      = login.target
 termsignal      = HUP

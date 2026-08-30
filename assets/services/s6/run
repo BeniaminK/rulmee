@@ -5,4 +5,4 @@ importas -sCuD "" ARGS ARGS
 importas -sCuD "agetty" GETTY GETTY
 if -t { test -e /dev/tty7 }
 if -t { test ${SPAWN} = "yes" }
-	exec agetty -8 tty7 115200 ${ARGS} -nl /bin/lidm -o 7
+	exec agetty -8 tty7 115200 ${ARGS} -nl /bin/rulmee -o 7
