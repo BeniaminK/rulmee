@@ -11,9 +11,10 @@ jobs:
     steps:
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: "git libpam0g-dev cargo rustc"
+          packages: "git libpam0g-dev"
           version: 1.0
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - id: build
         run: ARCH=amd64 assets/github_scripts/build.sh
 
@@ -31,9 +32,10 @@ jobs:
     steps:
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: "git libpam0g-dev gcc-multilib cargo rustc"
+          packages: "git libpam0g-dev gcc-multilib"
           version: 1.0
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update -y
@@ -65,8 +67,9 @@ jobs:
           githubToken: ${{ github.token }}
           install: |
             apt-get update && \
-            apt-get install -y make gcc libpam0g-dev cargo rustc
-          run: ARCH=aarch64 GITHUB_STEP_SUMMARY=gss.out GITHUB_OUTPUT=go.out assets/github_scripts/build.sh
+            apt-get install -y make gcc libpam0g-dev curl ca-certificates && \
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          run: source $HOME/.cargo/env && ARCH=aarch64 GITHUB_STEP_SUMMARY=gss.out GITHUB_OUTPUT=go.out assets/github_scripts/build.sh
       - if: always()
         run: set +e; cat gss.out >>"$GITHUB_STEP_SUMMARY"; cat go.out >>"$GITHUB_OUTPUT"
 
@@ -93,8 +96,9 @@ jobs:
           githubToken: ${{ github.token }}
           install: |
             apt-get update && \
-            apt-get install -y make gcc libpam0g-dev cargo rustc
-          run: ARCH=armv7 GITHUB_STEP_SUMMARY=gss.out GITHUB_OUTPUT=go.out assets/github_scripts/build.sh
+            apt-get install -y make gcc libpam0g-dev curl ca-certificates && \
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          run: source $HOME/.cargo/env && ARCH=armv7 GITHUB_STEP_SUMMARY=gss.out GITHUB_OUTPUT=go.out assets/github_scripts/build.sh
       - if: always()
         run: set +e; cat gss.out >>"$GITHUB_STEP_SUMMARY"; cat go.out >>"$GITHUB_OUTPUT"
 
@@ -121,8 +125,9 @@ jobs:
           githubToken: ${{ github.token }}
           install: |
             apt-get update && \
-            apt-get install -y make gcc libpam0g-dev cargo rustc
-          run: ARCH=riscv64 GITHUB_STEP_SUMMARY=gss.out GITHUB_OUTPUT=go.out assets/github_scripts/build.sh
+            apt-get install -y make gcc libpam0g-dev curl ca-certificates && \
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          run: source $HOME/.cargo/env && ARCH=riscv64 GITHUB_STEP_SUMMARY=gss.out GITHUB_OUTPUT=go.out assets/github_scripts/build.sh
       - if: always()
         run: set +e; cat gss.out >>"$GITHUB_STEP_SUMMARY"; cat go.out >>"$GITHUB_OUTPUT"
 

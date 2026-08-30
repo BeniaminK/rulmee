@@ -10,8 +10,14 @@ ERR=0
 # shellcheck disable=SC2034
 make -j"$(nproc)" "$@" 2> /tmp/stderr || ERR=$?
 
-BSIZE=$(stat --printf="%s" rulmee)
-HSIZE=$(numfmt --to=iec-i<<<"$BSIZE")B
+if [ -f rulmee ]; then
+    BSIZE=$(stat --printf="%s" rulmee)
+    HSIZE=$(numfmt --to=iec-i<<<"$BSIZE")B
+else
+    BSIZE=0
+    HSIZE="0B"
+fi
+
 WARNS=$(
   sed -nE \
       's/^([^ ]+\.rs):([0-9]+):([0-9]+): ([a-z]+): (.*)$/::\4 file=\1,line=\2,col=\3::\5/p' \
