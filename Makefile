@@ -27,7 +27,7 @@ LIBS = -lpam
 
 rulmee:
 	cargo build --release
-	cp target/release/rulmee ./rulmee
+	find target -name rulmee -type f -exec cp {} ./rulmee \;
 
 clean:
 	rm -rf $(ODIR) target rulmee
