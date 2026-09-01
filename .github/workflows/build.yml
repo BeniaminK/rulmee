@@ -60,7 +60,7 @@ jobs:
           packages: "git"
           version: 1.0
       - uses: actions/checkout@v4
-      - uses: uraimo/run-on-arch-action@v2
+      - uses: uraimo/run-on-arch-action@v3
         with:
           arch: aarch64
           distro: ubuntu22.04
@@ -89,7 +89,7 @@ jobs:
           packages: "git"
           version: 1.0
       - uses: actions/checkout@v4
-      - uses: uraimo/run-on-arch-action@v2
+      - uses: uraimo/run-on-arch-action@v3
         with:
           arch: armv7
           distro: ubuntu22.04
@@ -118,7 +118,7 @@ jobs:
           packages: "git"
           version: 1.0
       - uses: actions/checkout@v4
-      - uses: uraimo/run-on-arch-action@v2
+      - uses: uraimo/run-on-arch-action@v3
         with:
           arch: riscv64
           distro: ubuntu22.04
