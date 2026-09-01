@@ -12,7 +12,7 @@ let
 in
 {
   inherit maker;
-  file = builtins.toFile "lidm.conf" (
+  file = builtins.toFile "rulmee.conf" (
     if builtins.isString cfg then
       builtins.readFile "${src}/themes/${cfg}.ini"
     else if builtins.isAttrs cfg then

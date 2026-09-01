@@ -1,4 +1,4 @@
-# Default Configuration for LiDM (Lightweight Display Manager)
+# Default Configuration for Rulmee (RUst Login ManagEEr)
 # All settings shown below with their default values.
 
 [colors.bg]
@@ -95,7 +95,7 @@ bypass_shell_login = false
 show_theme = false
 
 [logging]
-file = "/tmp/lidm.log"
+file = "/tmp/rulmee.log"
 level = "debug"
 stdout = false
 

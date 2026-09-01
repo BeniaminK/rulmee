@@ -4,7 +4,7 @@
 
 # Rulmee (RUst Login ManagEEr)
 
-**Rulmee** is a lightweight, secure, and highly customizable Terminal User Interface (TUI) display manager written in Rust. It is a completely rewritten and enhanced version of [LiDM](https://github.com/javalsai/lidm).
+**Rulmee** (RUst Login ManagEEr) is a secure and highly customizable Terminal User Interface (TUI) display manager written in Rust. It is a completely rewritten and enhanced version of [LiDM](https://github.com/javalsai/lidm).
 
 Like traditional display managers (such as SDDM or GDM), Rulmee handles user authentication, session discovery, and desktop launching—all within a text-based TUI directly on Linux virtual terminals (TTYs).
 
@@ -126,18 +126,15 @@ To install default configuration files, man pages, and service descriptors, cons
 
 # Configuration
 
-Rulmee reads configuration from `/etc/rulmee/config.toml` (or user config at `~/.config/rulmee/config.toml`).
+Rulmee reads primary configuration from `/etc/rulmee/default.toml` (or user config at `~/.config/rulmee/default.toml`).
 
-Themes are loaded from `/etc/rulmee/theme.toml` or packaged themes in `/usr/share/rulmee/themes/`.
-
-> [!NOTE]
-> **Backward Compatibility**: If `/etc/rulmee/config.toml` is absent, Rulmee temporarily falls back to legacy `/etc/lidm/config.ini` and emits a deprecation warning urging migration to TOML. This fallback support will be removed when Rulmee gains more GitHub stars than LiDM (as an indicator of adoption and migration completeness).
+Themes are discovered from `/etc/rulmee/themes/` and `/usr/share/rulmee/themes/` (with legacy fallback support for `/etc/lidm/themes/` and `/usr/share/lidm/themes/`).
 
 ---
 
 # PAM Authentication
 
-Rulmee initializes Linux-PAM authentication using the `login` PAM service (`/etc/pam.d/login`) by default. You can override the target service name by setting `RULMEE_AUTH_PAM_SERVICE` (or `LIDM_PAM_SERVICE`):
+Rulmee initializes Linux-PAM authentication using the `login` PAM service (`/etc/pam.d/login`) by default. You can override the target service name by setting `RULMEE_AUTH_PAM_SERVICE`:
 
 ```bash
 export RULMEE_AUTH_PAM_SERVICE="rulmee"

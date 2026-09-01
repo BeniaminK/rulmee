@@ -10,7 +10,7 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
 };
 
-const DEFAULT_LOG_FILE: &str = "/tmp/lidm.log";
+const DEFAULT_LOG_FILE: &str = "/tmp/rulmee.log";
 
 #[derive(Clone)]
 struct ConsoleBufferWriter {
@@ -154,8 +154,8 @@ mod tests {
 
     #[test]
     fn test_resolve_log_path_cli_arg() {
-        let path = resolve_log_path(Some("/tmp/lidm_cli_test.log"));
-        assert_eq!(path, "/tmp/lidm_cli_test.log");
+        let path = resolve_log_path(Some("/tmp/rulmee_cli_test.log"));
+        assert_eq!(path, "/tmp/rulmee_cli_test.log");
     }
 
     #[test]
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn test_double_initialize_logging_idempotent() {
         let cfg = LoggingConfig {
-            file: "/tmp/lidm_test_double.log".to_string(),
+            file: "/tmp/rulmee_test_double.log".to_string(),
             level: "debug".to_string(),
             stdout: false,
         };
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn test_stdout_colored_logging() {
         let cfg = LoggingConfig {
-            file: "/tmp/lidm_stdout_test.log".to_string(),
+            file: "/tmp/rulmee_stdout_test.log".to_string(),
             level: "trace".to_string(),
             stdout: true,
         };

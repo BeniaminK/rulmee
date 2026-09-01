@@ -1,40 +1,40 @@
-.\" Manpage for lidm
-.\" https://github.com/javalsai/lidm
-.TH lidm-config 5
+.\" Manpage for rulmee
+.\" https://github.com/BeniaminK/rulmee
+.TH rulmee-config 5
 
 .SH NAME
-lidm-config \- Configuration file syntax for lidm
+rulmee-config \- Configuration file syntax for rulmee
 
 
 .SH SYNOPSIS
-\fB\fI/etc/lidm.ini\fP
+\fB\fI/etc/rulmee/default.toml\fP
 
 
 .SH THEMES
 There are themes you can take as reference or simply copy in \fBthemes/\fP, no need to tackle the config yourself. It's good to give this a read however.
 
 .SH DESCRIPTION
-The \fI/etc/lidm.ini\fP file specifies all the configuration for lidm, including theme colors. It's also possible to override this path with the \fILIDM_CONF\fP environment variable.
+The \fI/etc/rulmee/default.toml\fP file specifies all the configuration for rulmee, including theme colors. It's also possible to override this path with the \fIRULMEE_CONF\fP environment variable.
 
-The configuration aims to mimic a toml syntax but it's not 100% compatible with it. It's grouped in tables and takes key/value pairs parsed in different modes depndending on the type. Comments and empty lines are allowed as well as surrounding whitespace at the edges of the line and the equals sign.
+The configuration uses standard TOML syntax. It's grouped in tables and takes key/value pairs parsed in different modes depending on the type.
 
 Values can be of these types:
 .TP
 \fBSTRING\fP
-Needs to be quoted with double quotes, allows basic character escaping with a backslash as well as bytes of the form \fB\\xHH\fP, please don't put a nullbyte.
+Double-quoted string value.
 .TP
 \fBBOOL\fP
 Either \fBtrue\fP or \fBfalse\fP, no quoting.
 .TP
 \fBKEY\fP
-Represents a keyboard key, must be unquoted, possible values are enumerated in \fBinclude/keys.h\fP.
+Represents a keyboard key.
 .TP
 \fBSTRING_ARRAY\fP
-A list of strings, especified as a normal string, but reassigning to the same variable will append to that list.
+A list of strings.
 
 
 .SH KEYS
-In case anything here is outdated, all the config structure is defined in \fBinclude/config.h\fP, you can also find the default values there. This reference is separated by tables.
+All config structure is defined in TOML tables. This reference is separated by tables.
 
 .SS colors
 All these values are of type \fBSTRING\fP.
@@ -94,10 +94,10 @@ Ellipsis to be used in multiple parts such as overflowing hostnames.
 Other miscellaneous behavior strings, of mixed types
 .TP
 \fBinclude_defshell\fP
-Type \fBBOOL\fP, specifies if the default user shel should be included as a session.
+Type \fBBOOL\fP, specifies if the default user shell should be included as a session.
 .TP
 \fBsource, user_source\fP
-Types \fBSTRING_ARRAY\fP. Specify paths to source on login if they exist, simple KEY=VALUE format with comments (#) or empty'ish lines, quoting or escape sequences not supported yet. \fBuser_source\fP paths are relative to user home.
+Types \fBSTRING_ARRAY\fP. Specify paths to source on login if they exist.
 .TP
 \fBtimefmt\fP
 Specify the time format string to be displayed. Check \fBstrftime (3)\fP to know the possible formatting variables.
@@ -106,9 +106,9 @@ Specify the time format string to be displayed. Check \fBstrftime (3)\fP to know
 Rate (in milliseconds) at which the UI should refresh, affects clock and resize behavior.
 .TP
 \fBbypass_shell_login\fP
-Type \fBBOOL\fP, lidm logins through a login shell (e.g. `bash`) in login mode (e.g. `arg0` being `-bash`) to load `/etc/profile/, `/etc/profile.d/` and more. If this option is enabled that's bypassed entirely.
+Type \fBBOOL\fP, rulmee logins through a login shell (e.g. `bash`) in login mode (e.g. `arg0` being `-bash`) to load `/etc/profile`, `/etc/profile.d/` and more. If this option is enabled that's bypassed entirely.
 
 
 .SH "SEE ALSO"
-.BR lidm (1)
+.BR rulmee (1)
 .BR strftime (3)

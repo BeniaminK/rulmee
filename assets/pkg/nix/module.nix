@@ -6,20 +6,20 @@
 }:
 
 let
-  cfg = config.services.lidm;
+  cfg = config.services.rulmee;
 
   dmcfg = config.services.displayManager;
   desktops = dmcfg.sessionData.desktops;
 
   version = "2.0.1";
-  lidmPkg = pkgs.callPackage ./lidm.nix {
+  rulmeePkg = pkgs.callPackage ./rulmee.nix {
     inherit pkgs;
     config = {
       inherit version lib;
       cfg = cfg.config;
       src = pkgs.fetchFromGitHub {
-        owner = "javalsai";
-        repo = "lidm";
+        owner = "BeniaminK";
+        repo = "rulmee";
         rev = "v${version}";
         sha256 = "sha256-bpUqhD1JSiYRf7w7ylEMXHMvEpnSri1zZSxRQPdZWB4=";
       };
@@ -31,13 +31,13 @@ let
 in
 {
   options = {
-    lidm.keysEnum = lib.mkOption {
+    rulmee.keysEnum = lib.mkOption {
       type = with lib.types; attrs;
-      default = lidm.passthru.keysEnum;
+      default = rulmee.passthru.keysEnum;
       readOnly = true;
       description = "Keys enum constants";
     };
-    services.lidm.config = lib.mkOption {
+    services.rulmee.config = lib.mkOption {
       type =
         with lib.types;
         oneOf [
@@ -45,13 +45,13 @@ in
           attrs
         ];
       default = { };
-      description = "Config options for lidm | Either attr tree or name of bundled themes";
+      description = "Config options for rulmee | Either attr tree or name of bundled themes";
     };
   };
   config = {
-    services.displayManager.defaultSession = "lidm";
+    services.displayManager.defaultSession = "rulmee";
 
-    systemd.services.lidm = {
+    systemd.services.rulmee = {
       description = "TUI display manager";
       aliases = [ "display-manager.service" ];
       after = [
@@ -60,7 +60,7 @@ in
       ];
       serviceConfig = {
         Type = "idle";
-        ExecStart = "${lidmPkg}/bin/lidm 7";
+        ExecStart = "${rulmeePkg}/bin/rulmee 7";
         StandardInput = "tty";
         StandardOutput = "tty";
         StandardError = "tty";

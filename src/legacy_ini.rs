@@ -1,6 +1,8 @@
 use crate::colors::{Colors, ThemeStyle};
 use std::path::Path;
 
+pub const LEGACY_THEME_SEARCH_PATHS: &[&str] = &["/etc/lidm/themes", "/usr/share/lidm/themes"];
+
 /// Parses a legacy ANSI SGR escape code string (e.g. `"1;4;38;2;255;174;66"`) into a `ThemeStyle`.
 pub fn parse_ansi_style(sgr: &str) -> ThemeStyle {
     let sgr = sgr.trim().trim_matches('"').trim_matches('\'');

@@ -17,7 +17,7 @@ let
   maker = get-cfg.maker;
 in
 pkgs.stdenv.mkDerivation rec {
-  pname = "lidm";
+  pname = "rulmee";
   version = config.version;
   src = config.src;
 
@@ -38,7 +38,7 @@ pkgs.stdenv.mkDerivation rec {
     ++ lib.optional (
       config.wayland-sessions != null
     ) "CPPFLAGS+=-DSESSIONS_WAYLAND=\\\"${config.wayland-sessions}\\\""
-    ++ lib.optional (cfg-file != null) "CPPFLAGS+=-DLIDM_CONF_PATH=\\\"${cfg-file}\\\"";
+    ++ lib.optional (cfg-file != null) "CPPFLAGS+=-DRULMEE_CONF_PATH=\\\"${cfg-file}\\\"";
 
   fixupPhase = ''
     rm -rf $out/etc

@@ -798,7 +798,7 @@ mod tests {
         });
         ui.themes = vec![crate::theme::Theme::new(
             "test_theme",
-            "/etc/lidm/themes/test_theme.toml",
+            "/etc/rulmee/themes/test_theme.toml",
             config.colors,
         )];
         ui.cycle_theme();

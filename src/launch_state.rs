@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-const STATE_DIR: &str = "/var/lib/lidm";
-const STATE_FILE: &str = "/var/lib/lidm/state";
+const STATE_DIR: &str = "/var/lib/rulmee";
+const STATE_FILE: &str = "/var/lib/rulmee/state";
 
 pub struct LaunchState {
     pub username: String,
